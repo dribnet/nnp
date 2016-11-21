@@ -14,7 +14,6 @@ sy,sx,number_of_channels = img.shape
 number_of_bytes = sy*sx*number_of_channels
 
 # rotate the image by 180 degrees
-print(img.shape)
 img  = np.flipud(img)
 img = img.ravel()
 
