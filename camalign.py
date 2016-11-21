@@ -7,11 +7,14 @@ import numpy as np
 from pyglet.gl import *
 import scipy.misc
 from faceswap import doalign
+import argparse
+import datetime
+import sys
+import os
 
 # Setup
 window_height = 800
 window_width = 1200
-
 
 window = pyglet.window.Window(window_width, window_height, resizable=False)
 framecount = 0
@@ -20,15 +23,19 @@ num_sets   = 3
 cur_set    = 0
 last_aligned_face = None
 
-camera=cv2.VideoCapture(0)
-result1 = camera.set(cv2.CAP_PROP_FRAME_WIDTH,720)
-result2 = camera.set(cv2.CAP_PROP_FRAME_HEIGHT,512)
-result3 = camera.set(cv2.CAP_PROP_FPS,1)
+camera = None
+
+def setup_camera():
+    cam = cv2.VideoCapture(0)
+    result1 = cam.set(cv2.CAP_PROP_FRAME_WIDTH,720)
+    result2 = cam.set(cv2.CAP_PROP_FRAME_HEIGHT,512)
+    result3 = cam.set(cv2.CAP_PROP_FPS,1)
+    return cam
 
 def get_camera_image(camera):
     retval,img = camera.read()
-    destRGB = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-    return destRGB
+    # destRGB = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+    return img
 
 def image_to_texture(img):
     sy,sx,number_of_channels = img.shape
@@ -37,7 +44,7 @@ def image_to_texture(img):
     img = img.ravel()
     image_texture = (GLubyte * number_of_bytes)( *img.astype('uint8') )
     # my webcam happens to produce BGR; you may need 'RGB', 'RGBA', etc. instead
-    pImg = pyglet.image.ImageData(sx,sy,'RGB',
+    pImg = pyglet.image.ImageData(sx,sy,'BGR',
            image_texture,pitch=sx*number_of_channels)
     return pImg
 
@@ -48,6 +55,15 @@ def image_to_texture(img):
 def get_aligned(img):
     success, im_resize, rect = doalign.align_face_buffer(img, 256, max_extension_amount=0)
     return im_resize
+
+def write_last_aligned():
+    if last_aligned_face is None:
+        return
+    datestr = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    filename = "pipeline/aligned/{}.png".format(datestr)    
+    if os.path.exists(filename):
+        return
+    cv2.imwrite(filename, last_aligned_face)
 
 # Draw Loop
 def draw(dt):
@@ -73,33 +89,33 @@ def draw(dt):
 
     if last_aligned_face is not None:
         align_tex = image_to_texture(last_aligned_face)
-        align_tex.blit(0,0)
+        align_tex.blit(0,window_height - small_im.shape[0] - last_aligned_face.shape[0] - 20)
 
     framecount += pyglet.clock.get_fps()
     timecount  += dt
     return
 
-def change_set(amount):
-    global cur_set, num_sets
-    cur_set += amount
-
-    if(cur_set > num_sets):
-        cur_set = (cur_set-1) % num_sets
-    elif(cur_set < 0):
-        cur_set = cur_set%num_sets + 1
-    
-    # print "Switching to set " + str(cur_set)
-
-    # layout_happy.change_image('images/happy_' + str(cur_set) + '.png', 8)
-    # layout_angry.change_image('images/angry_' + str(cur_set) + '.png', 8)
-    # layout_surprised.change_image('images/surprised_' + str(cur_set) + '.png', 8)
-
 @window.event
 def on_key_press(symbol, modifiers):
+    print("SO: {}".format(symbol))
     if(symbol == key.LEFT):
-        change_set(-1)
-    elif(symbol == key.RIGHT):
-        change_set(1)
+        print("LEFT")
+    elif(symbol == key.SPACE):
+        print("SPACEBAR")
+        write_last_aligned();
+    elif(symbol == key.ESCAPE):
+        print("ESCAPE")
+        cv2.destroyAllWindows()
+        cv2.VideoCapture(0).release()
+        sys.exit(0)
 
-clock.schedule(draw)
-pyglet.app.run()
+if __name__ == "__main__":
+    # argparse
+    parser = argparse.ArgumentParser(description='Let get NIPSy')
+
+    global camera
+
+    camera = setup_camera()
+
+    clock.schedule(draw)
+    pyglet.app.run()
