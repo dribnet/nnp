@@ -14,7 +14,7 @@ import os
 
 # Setup
 window_height = 800
-window_width = 1200
+window_width = 1280
 
 window = pyglet.window.Window(window_width, window_height, resizable=False)
 framecount = 0
