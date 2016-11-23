@@ -13,6 +13,7 @@ import sys
 import os
 from discgen.interface import DiscGenModel
 from plat.utils import get_json_vectors, offset_from_string
+from plat.grid_layout import grid2img
 from PIL import Image
 
 # Setup
@@ -83,12 +84,10 @@ def write_last_aligned(debugfile=False):
         return
     cv2.imwrite(filename, last_recon_face)
 
-def get_recon(rawim):
-    global dmodel, vector_offsets
-
+def encode_from_image(rawim):
+    global dmodel
     mixedim = np.asarray([[rawim[:,:,2], rawim[:,:,1], rawim[:,:,0]]])
     # mixedim = np.asarray([[rawim[:,:,0], rawim[:,:,0], rawim[:,:,0]]])
-    # entry = mixedim[0:3, 0:0+256, 0:0+256]
     entry = (mixedim / 255.0).astype('float32')
 
     # out = np.dstack(entry[0])
@@ -99,10 +98,44 @@ def get_recon(rawim):
     # print(entry)
     # print(entry.shape)
 
+    encoded = dmodel.encode_images(entry)[0]
+    return encoded
+
+def pr_map(value, istart, istop, ostart, ostop):
+    return ostart + (ostop - ostart) * ((value - istart) / float(istop - istart));
+
+def write_atstrip(debugfile=False):
+    global dmodel, vector_offsets
+
+    if last_aligned_face is None or dmodel is None or vector_offsets is None:
+        return
+
+    if debugfile:
+        datestr = "debug"
+    else:
+        datestr = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    filename = "pipeline/atstrip/{}.png".format(datestr)
+
+    encoded = encode_from_image(last_aligned_face)
+    decode_list = []
+    deblur_vector = vector_offsets[0]
+    anchor_index = 0
+    attribute_vector = vector_offsets[anchor_index+1]
+    for i in range(7):
+        scale_factor = pr_map(i, 0, 5, -0.5, 1.5)
+        cur_anchor = encoded + scale_factor * attribute_vector + deblur_vector
+        decode_list.append(cur_anchor)
+    decoded = dmodel.sample_at(np.array(decode_list))
+    img = grid2img(decoded, 1, 5, False)
+    img.save(filename)
+
+def get_recon(rawim):
+    global dmodel, vector_offsets
+
     if dmodel is None:
         return None
 
-    encoded = dmodel.encode_images(entry)[0]
+    encoded = encode_from_image(rawim)
 
     if vector_offsets is not None:
         deblur_vector = vector_offsets[0]
@@ -151,6 +184,7 @@ def draw(dt):
 
     if debug_outputs:
         write_last_aligned(debugfile=True)
+        write_atstrip(debugfile=True)
 
     framecount += pyglet.clock.get_fps()
     timecount  += dt
@@ -163,7 +197,7 @@ def on_key_press(symbol, modifiers):
         print("LEFT")
     elif(symbol == key.SPACE):
         print("SPACEBAR")
-        write_last_aligned();
+        write_atstrip();
     elif(symbol == key.ESCAPE):
         print("ESCAPE")
         cv2.destroyAllWindows()
