@@ -12,7 +12,7 @@ import datetime
 import sys
 import os
 from discgen.interface import DiscGenModel
-from plat.utils import get_json_vectors
+from plat.utils import get_json_vectors, offset_from_string
 from PIL import Image
 
 # Setup
@@ -84,7 +84,7 @@ def write_last_aligned(debugfile=False):
     cv2.imwrite(filename, last_recon_face)
 
 def get_recon(rawim):
-    global dmodel
+    global dmodel, vector_offsets
 
     mixedim = np.asarray([[rawim[:,:,2], rawim[:,:,1], rawim[:,:,0]]])
     # mixedim = np.asarray([[rawim[:,:,0], rawim[:,:,0], rawim[:,:,0]]])
@@ -102,32 +102,22 @@ def get_recon(rawim):
     if dmodel is None:
         return None
 
-    encoded = dmodel.encode_images(entry)
+    encoded = dmodel.encode_images(entry)[0]
 
     if vector_offsets is not None:
-        deblur_vector = smile_offsets[0]
+        deblur_vector = vector_offsets[0]
         anchor_index = 0
-        smile_vector = smile_offsets[anchor_index+1]
-        smile_score = np.dot(smile_vector, encoded)
-        smile_detected = (smile_score > 0)
-        print("Attribute vector detector for {}: {} {}".format(anchor_index, smile_score, smile_detected))
+        attribute_vector = vector_offsets[anchor_index+1]
+        chosen_anchor = encoded + attribute_vector + deblur_vector
+        # smile_score = np.dot(smile_vector, encoded)
+        # smile_detected = (smile_score > 0)
+        # print("Attribute vector detector for {}: {} {}".format(anchor_index, smile_score, smile_detected))
 
-        if do_smile is not None:
-            apply_smile = str2bool(do_smile)
-        else:
-            apply_smile = not smile_detected
-
-        if apply_smile:
-            print("Adding attribute {}".format(anchor_index))
-            chosen_anchor = [encoded, encoded + smile_vector + deblur_vector]
-        else:
-            print("Removing attribute {}".format(anchor_index))
-            chosen_anchor = [encoded, encoded - smile_vector + deblur_vector]
     else:
         chosen_anchor = encoded
 
-    decoded = dmodel.sample_at(encoded)[0]
-    print(decoded.shape)
+    decode_list = np.array([chosen_anchor])
+    decoded = dmodel.sample_at(decode_list)[0]
     # RGB -> BGR?
     decoded = np.array([decoded[2], decoded[1], decoded[0]])
     decoded_array = (255 * np.dstack(decoded)).astype(np.uint8)
