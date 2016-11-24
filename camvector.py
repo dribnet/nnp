@@ -15,6 +15,7 @@ from discgen.interface import DiscGenModel
 from plat.utils import get_json_vectors, offset_from_string
 from plat.grid_layout import grid2img
 from PIL import Image
+from scipy.misc import imread, imsave
 
 # Setup
 window_height = 800
@@ -42,8 +43,8 @@ def setup_camera():
     return cam
 
 def get_camera_image(camera):
-    retval,img = camera.read()
-    # destRGB = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+    retval, img = camera.read()
+    img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
     return img
 
 def image_to_texture(img):
@@ -53,7 +54,7 @@ def image_to_texture(img):
     img = img.ravel()
     image_texture = (GLubyte * number_of_bytes)( *img.astype('uint8') )
     # my webcam happens to produce BGR; you may need 'RGB', 'RGBA', etc. instead
-    pImg = pyglet.image.ImageData(sx,sy,'BGR',
+    pImg = pyglet.image.ImageData(sx,sy,'RGB',
            image_texture,pitch=sx*number_of_channels)
     return pImg
 
@@ -75,29 +76,19 @@ def write_last_aligned(debugfile=False):
     filename = "pipeline/aligned/{}.png".format(datestr)
     if not debugfile and os.path.exists(filename):
         return
-    cv2.imwrite(filename, last_aligned_face)
+    imsave(filename, last_aligned_face)
 
     if last_recon_face is None:
         return
     filename = "pipeline/recon/{}.png".format(datestr)    
     if not debugfile and os.path.exists(filename):
         return
-    cv2.imwrite(filename, last_recon_face)
+    imsave(filename, last_recon_face)
 
 def encode_from_image(rawim):
     global dmodel
-    mixedim = np.asarray([[rawim[:,:,2], rawim[:,:,1], rawim[:,:,0]]])
-    # mixedim = np.asarray([[rawim[:,:,0], rawim[:,:,0], rawim[:,:,0]]])
+    mixedim = np.asarray([[rawim[:,:,0], rawim[:,:,1], rawim[:,:,2]]])
     entry = (mixedim / 255.0).astype('float32')
-
-    # out = np.dstack(entry[0])
-    # out = (255 * out).astype(np.uint8)
-    # print(entry.shape, out.shape)
-    # outim = Image.fromarray(out)
-    # outim.save("debug_passthrough.png")
-    # print(entry)
-    # print(entry.shape)
-
     encoded = dmodel.encode_images(entry)[0]
     return encoded
 
@@ -156,6 +147,27 @@ def get_recon(rawim):
     decoded_array = (255 * np.dstack(decoded)).astype(np.uint8)
     return decoded_array
 
+def get_recon_strip(rawim):
+    global dmodel, vector_offsets
+
+    if dmodel is None or vector_offsets is None:
+        return
+
+    encoded = encode_from_image(rawim)
+    decode_list = []
+    deblur_vector = vector_offsets[0]
+    anchor_index = 0
+    attribute_vector = vector_offsets[anchor_index+1]
+    for i in range(5):
+        scale_factor = pr_map(i, 0, 5, -0.5, 1.5)
+        cur_anchor = encoded + scale_factor * attribute_vector + deblur_vector
+        decode_list.append(cur_anchor)
+    decoded = dmodel.sample_at(np.array(decode_list))
+    n, c, y, x = decoded.shape
+    decoded_strip = np.concatenate(decoded, axis=2)
+    decoded_array = (255 * np.dstack(decoded_strip)).astype(np.uint8)
+    return decoded_array
+
 # Draw Loop
 def draw(dt):
     global window, framecount, timecount
@@ -174,17 +186,17 @@ def draw(dt):
 
     if last_aligned_face is not None:
         align_tex = image_to_texture(last_aligned_face)
-        align_tex.blit(0,window_height - last_aligned_face.shape[0] - 20)
+        align_tex.blit(window_width / 2 - 128, window_height - last_aligned_face.shape[0])
 
-        recon = get_recon(last_aligned_face)
+        recon = get_recon_strip(last_aligned_face)
         if recon is not None:
             last_recon_face = recon
             recon_tex = image_to_texture(recon)
-            recon_tex.blit(0, 0)
+            recon_tex.blit(0, window_height/2 - 128)
 
     if debug_outputs:
         write_last_aligned(debugfile=True)
-        write_atstrip(debugfile=True)
+        # write_atstrip(debugfile=True)
 
     framecount += pyglet.clock.get_fps()
     timecount  += dt
@@ -197,7 +209,8 @@ def on_key_press(symbol, modifiers):
         print("LEFT")
     elif(symbol == key.SPACE):
         print("SPACEBAR")
-        write_atstrip();
+        write_last_aligned();
+        # write_atstrip();
     elif(symbol == key.ESCAPE):
         print("ESCAPE")
         cv2.destroyAllWindows()
@@ -220,6 +233,7 @@ if __name__ == "__main__":
     debug_outputs = args.debug_outputs
     if args.debug_input is not None:
         debug_input = cv2.imread(args.debug_input, cv2.IMREAD_COLOR)
+        debug_input = cv2.cvtColor(debug_input, cv2.COLOR_BGR2RGB)
     else:
         camera = setup_camera()
 
