@@ -17,23 +17,16 @@ from plat.grid_layout import grid2img
 from PIL import Image
 from scipy.misc import imread, imsave
 
-# Setup
-window_height = 800
-window_width = 1280
-
-window = pyglet.window.Window(window_width, window_height, resizable=False)
-framecount = 0
-timecount  = 0
 num_sets   = 3
 cur_set    = 0
-last_aligned_face = None
-last_recon_face = None
 
+theApp = None
 camera = None
 dmodel = None
 vector_offsets = None
-debug_input = None
-debug_outputs = False
+window_height = 800
+window_width = 1280
+window = pyglet.window.Window(window_width, window_height, resizable=False)
 
 def setup_camera():
     cam = cv2.VideoCapture(0)
@@ -58,32 +51,9 @@ def image_to_texture(img):
            image_texture,pitch=sx*number_of_channels)
     return pImg
 
-# layout_happy     = layout('images/happy_0.png', 8, 3/4., window)
-# layout_angry     = layout('images/angry_0.png', 8, 2/4., window)
-# layout_surprised = layout('images/surprised_0.png', 8, 1/4., window)
-
 def get_aligned(img):
     success, im_resize, rect = doalign.align_face_buffer(img, 256, max_extension_amount=0)
     return im_resize
-
-def write_last_aligned(debugfile=False):
-    if last_aligned_face is None:
-        return
-    if debugfile:
-        datestr = "debug"
-    else:
-        datestr = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-    filename = "pipeline/aligned/{}.png".format(datestr)
-    if not debugfile and os.path.exists(filename):
-        return
-    imsave(filename, last_aligned_face)
-
-    if last_recon_face is None:
-        return
-    filename = "pipeline/recon/{}.png".format(datestr)    
-    if not debugfile and os.path.exists(filename):
-        return
-    imsave(filename, last_recon_face)
 
 def encode_from_image(rawim):
     global dmodel
@@ -94,31 +64,6 @@ def encode_from_image(rawim):
 
 def pr_map(value, istart, istop, ostart, ostop):
     return ostart + (ostop - ostart) * ((value - istart) / float(istop - istart));
-
-def write_atstrip(debugfile=False):
-    global dmodel, vector_offsets
-
-    if last_aligned_face is None or dmodel is None or vector_offsets is None:
-        return
-
-    if debugfile:
-        datestr = "debug"
-    else:
-        datestr = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-    filename = "pipeline/atstrip/{}.png".format(datestr)
-
-    encoded = encode_from_image(last_aligned_face)
-    decode_list = []
-    deblur_vector = vector_offsets[0]
-    anchor_index = 0
-    attribute_vector = vector_offsets[anchor_index+1]
-    for i in range(7):
-        scale_factor = pr_map(i, 0, 5, -0.5, 1.5)
-        cur_anchor = encoded + scale_factor * attribute_vector + deblur_vector
-        decode_list.append(cur_anchor)
-    decoded = dmodel.sample_at(np.array(decode_list))
-    img = grid2img(decoded, 1, 5, False)
-    img.save(filename)
 
 def get_recon(rawim):
     global dmodel, vector_offsets
@@ -168,39 +113,78 @@ def get_recon_strip(rawim):
     decoded_array = (255 * np.dstack(decoded_strip)).astype(np.uint8)
     return decoded_array
 
+class MainApp():
+    last_aligned_face = None
+    last_recon_face = None
+    debug_input = None
+    debug_outputs = False
+    framecount = 0
+    timecount  = 0
+
+    """Just a container for unfortunate global state"""
+    def __init__(self):
+        pass
+
+    def setDebugInput(self, im):
+        self.debug_input = im
+
+    def setDebugOutputs(self, mode):
+        self.debug_outputs = mode
+
+    def write_last_aligned(self, debugfile=False):
+        if self.last_aligned_face is None:
+            return
+        if debugfile:
+            datestr = "debug"
+        else:
+            datestr = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = "pipeline/aligned/{}.png".format(datestr)
+        if not debugfile and os.path.exists(filename):
+            return
+        imsave(filename, self.last_aligned_face)
+
+        if self.last_recon_face is None:
+            return
+        filename = "pipeline/recon/{}.png".format(datestr)    
+        if not debugfile and os.path.exists(filename):
+            return
+        imsave(filename, self.last_recon_face)
+
+    def draw(self, dt):
+        global camera, window
+        window.clear()
+
+        if self.debug_input is not None:
+            img = self.debug_input
+        else:
+            img = get_camera_image(camera)
+
+        align_im = get_aligned(img)
+        if align_im is not None:
+            self.last_aligned_face = align_im
+
+        if self.last_aligned_face is not None:
+            align_tex = image_to_texture(self.last_aligned_face)
+            align_tex.blit(window_width / 2 - 128, window_height - self.last_aligned_face.shape[0])
+
+            recon = get_recon_strip(self.last_aligned_face)
+            if recon is not None:
+                self.last_recon_face = recon
+                recon_tex = image_to_texture(recon)
+                recon_tex.blit(0, window_height/2 - 128)
+
+        if self.debug_outputs:
+            self.write_last_aligned(debugfile=True)
+
+        self.framecount += pyglet.clock.get_fps()
+        self.timecount  += dt
+        return
+
 # Draw Loop
 def draw(dt):
-    global window, framecount, timecount
-    global camera, last_aligned_face, last_recon_face
-    global debug_outputs
-    window.clear()
+    theApp.draw(dt)
 
-    if debug_input is not None:
-        img = debug_input
-    else:
-        img = get_camera_image(camera)
-
-    align_im = get_aligned(img)
-    if align_im is not None:
-        last_aligned_face = align_im
-
-    if last_aligned_face is not None:
-        align_tex = image_to_texture(last_aligned_face)
-        align_tex.blit(window_width / 2 - 128, window_height - last_aligned_face.shape[0])
-
-        recon = get_recon_strip(last_aligned_face)
-        if recon is not None:
-            last_recon_face = recon
-            recon_tex = image_to_texture(recon)
-            recon_tex.blit(0, window_height/2 - 128)
-
-    if debug_outputs:
-        write_last_aligned(debugfile=True)
-        # write_atstrip(debugfile=True)
-
-    framecount += pyglet.clock.get_fps()
-    timecount  += dt
-    return
+theApp = MainApp()
 
 @window.event
 def on_key_press(symbol, modifiers):
@@ -209,8 +193,7 @@ def on_key_press(symbol, modifiers):
         print("LEFT")
     elif(symbol == key.SPACE):
         print("SPACEBAR")
-        write_last_aligned();
-        # write_atstrip();
+        theApp.write_last_aligned();
     elif(symbol == key.ESCAPE):
         print("ESCAPE")
         cv2.destroyAllWindows()
@@ -230,7 +213,8 @@ if __name__ == "__main__":
                         help="write diagnostic output files each frame")
     args = parser.parse_args()
 
-    debug_outputs = args.debug_outputs
+    debug_input = None
+
     if args.debug_input is not None:
         debug_input = cv2.imread(args.debug_input, cv2.IMREAD_COLOR)
         debug_input = cv2.cvtColor(debug_input, cv2.COLOR_BGR2RGB)
@@ -248,6 +232,11 @@ if __name__ == "__main__":
         vector_offsets = [ -1 * offset_from_string(offset_indexes[0], offsets, dim) ]
         for i in range(len(offset_indexes) - 1):
             vector_offsets.append(offset_from_string(offset_indexes[i+1], offsets, dim))
+
+    if debug_input is not None:
+        theApp.setDebugInput(debug_input)
+    if args.debug_outputs:
+        theApp.setDebugOutputs(args.debug_outputs)
 
     clock.schedule(draw)
     pyglet.app.run()
