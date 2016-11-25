@@ -28,6 +28,8 @@ window_height = 800
 window_width = 1280
 window = pyglet.window.Window(window_width, window_height, resizable=False)
 
+vector_file = "images/vector_smile.png"
+
 def setup_camera():
     cam = cv2.VideoCapture(0)
     result1 = cam.set(cv2.CAP_PROP_FRAME_WIDTH,720)
@@ -123,6 +125,11 @@ class MainApp():
 
     """Just a container for unfortunate global state"""
     def __init__(self):
+        vector_im = imread(vector_file)
+        h, w, c = vector_im.shape
+        self.vector_x = int((window_width - w) / 2)
+        self.vector_y = int((window_height - h) / 2)
+        self.vector_tex = image_to_texture(vector_im)
         pass
 
     def setDebugInput(self, im):
@@ -163,6 +170,8 @@ class MainApp():
         if align_im is not None:
             self.last_aligned_face = align_im
 
+        self.vector_tex.blit(self.vector_x, self.vector_y)
+
         if self.last_aligned_face is not None:
             align_tex = image_to_texture(self.last_aligned_face)
             align_tex.blit(window_width / 2 - 128, window_height - self.last_aligned_face.shape[0])
@@ -171,7 +180,7 @@ class MainApp():
             if recon is not None:
                 self.last_recon_face = recon
                 recon_tex = image_to_texture(recon)
-                recon_tex.blit(0, window_height/2 - 128)
+                recon_tex.blit(0, 0)
 
         if self.debug_outputs:
             self.write_last_aligned(debugfile=True)
