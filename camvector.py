@@ -17,8 +17,8 @@ from plat.grid_layout import grid2img
 from PIL import Image
 from scipy.misc import imread, imsave
 
-num_sets   = 3
-cur_set    = 0
+num_vectors   = 4
+cur_vector    = 1
 
 theApp = None
 camera = None
@@ -28,7 +28,13 @@ window_height = 800
 window_width = 1280
 window = pyglet.window.Window(window_width, window_height, resizable=False)
 
-vector_file = "images/vector_smile.png"
+vector_files = [
+    "images/vector_oneshot.png",
+    "images/vector_blur.png",
+    "images/vector_smile.png",
+    "images/vector_surprised.png",
+    "images/vector_angry.png",
+]
 
 def setup_camera():
     cam = cv2.VideoCapture(0)
@@ -67,35 +73,8 @@ def encode_from_image(rawim):
 def pr_map(value, istart, istop, ostart, ostop):
     return ostart + (ostop - ostart) * ((value - istart) / float(istop - istart));
 
-def get_recon(rawim):
-    global dmodel, vector_offsets
-
-    if dmodel is None:
-        return None
-
-    encoded = encode_from_image(rawim)
-
-    if vector_offsets is not None:
-        deblur_vector = vector_offsets[0]
-        anchor_index = 0
-        attribute_vector = vector_offsets[anchor_index+1]
-        chosen_anchor = encoded + attribute_vector + deblur_vector
-        # smile_score = np.dot(smile_vector, encoded)
-        # smile_detected = (smile_score > 0)
-        # print("Attribute vector detector for {}: {} {}".format(anchor_index, smile_score, smile_detected))
-
-    else:
-        chosen_anchor = encoded
-
-    decode_list = np.array([chosen_anchor])
-    decoded = dmodel.sample_at(decode_list)[0]
-    # RGB -> BGR?
-    decoded = np.array([decoded[2], decoded[1], decoded[0]])
-    decoded_array = (255 * np.dstack(decoded)).astype(np.uint8)
-    return decoded_array
-
 def get_recon_strip(rawim):
-    global dmodel, vector_offsets
+    global dmodel, vector_offsets, cur_vector
 
     if dmodel is None or vector_offsets is None:
         return
@@ -104,7 +83,7 @@ def get_recon_strip(rawim):
     decode_list = []
     deblur_vector = vector_offsets[0]
     anchor_index = 0
-    attribute_vector = vector_offsets[anchor_index+1]
+    attribute_vector = vector_offsets[anchor_index+cur_vector]
     for i in range(5):
         scale_factor = pr_map(i, 0, 5, -0.5, 1.5)
         cur_anchor = encoded + scale_factor * attribute_vector + deblur_vector
@@ -125,12 +104,14 @@ class MainApp():
 
     """Just a container for unfortunate global state"""
     def __init__(self):
-        vector_im = imread(vector_file)
-        h, w, c = vector_im.shape
-        self.vector_x = int((window_width - w) / 2)
-        self.vector_y = int((window_height - h) / 2)
-        self.vector_tex = image_to_texture(vector_im)
-        pass
+        self.vector_textures = []
+        for i in range(len(vector_files)):
+            vector_im = imread(vector_files[i])
+            if i == 0:
+                h, w, c = vector_im.shape
+                self.vector_x = int((window_width - w) / 2)
+                self.vector_y = int((window_height - h) / 2)
+            self.vector_textures.append(image_to_texture(vector_im))
 
     def setDebugInput(self, im):
         self.debug_input = im
@@ -158,7 +139,7 @@ class MainApp():
         imsave(filename, self.last_recon_face)
 
     def draw(self, dt):
-        global camera, window
+        global camera, window, cur_vector
         window.clear()
 
         if self.debug_input is not None:
@@ -170,7 +151,7 @@ class MainApp():
         if align_im is not None:
             self.last_aligned_face = align_im
 
-        self.vector_tex.blit(self.vector_x, self.vector_y)
+        self.vector_textures[cur_vector+1].blit(self.vector_x, self.vector_y)
 
         if self.last_aligned_face is not None:
             align_tex = image_to_texture(self.last_aligned_face)
@@ -197,8 +178,15 @@ theApp = MainApp()
 
 @window.event
 def on_key_press(symbol, modifiers):
+    global cur_vector
     print("SO: {}".format(symbol))
-    if(symbol == key.LEFT):
+    if(symbol == key.DOWN):
+        print("DOWN")
+        cur_vector = (cur_vector - 1 + num_vectors) % num_vectors
+    if(symbol == key.UP):
+        print("UP")
+        cur_vector = (cur_vector + 1) % num_vectors
+    elif(symbol == key.LEFT):
         print("LEFT")
     elif(symbol == key.SPACE):
         print("SPACEBAR")
