@@ -25,7 +25,11 @@ theApp = None
 vector_offsets = None
 window_height = 800
 window_width = 1280
-window = pyglet.window.Window(window_width, window_height, resizable=False)
+window1 = pyglet.window.Window(window_width, window_height, resizable=False)
+window1.set_location(0, 0)
+
+window2 = pyglet.window.Window(window_width, window_height, resizable=False)
+
 cam_width = 720
 cam_height = 512
 
@@ -116,6 +120,8 @@ class MainApp():
                 h, w, c = vector_im.shape
                 self.vector_x = int((window_width - w) / 2)
                 self.vector_y = int((window_height - h) / 2)
+                self.vector_y1 = int(0)
+                self.vector_y3 = int(window_height - h)
             self.vector_textures.append(image_to_texture(vector_im))
         self.cur_canned_face = -1
         self.canned_aligned_faces = []
@@ -182,12 +188,12 @@ class MainApp():
             decoded_array = (255 * np.dstack(decoded_strip)).astype(np.uint8)
         return decoded_array
 
-    def draw(self, dt):
-        global window, cur_vector, do_clear
+    def draw1(self, dt):
+        global window1, cur_vector, do_clear
 
         # clear window only sometimes
         if do_clear:
-            window.clear()
+            window1.clear()
             do_clear = False
 
         # initialize camera and dmodel after warming up
@@ -253,13 +259,30 @@ class MainApp():
         self.cur_frame += 1
         return
 
+    def draw2(self, dt):
+        if self.one_shot_mode:
+            self.vector_textures[0].blit(self.vector_x, self.vector_y3)
+            self.vector_textures[0].blit(self.vector_x, self.vector_y)
+            self.vector_textures[0].blit(self.vector_x, self.vector_y1)
+        else:
+            self.vector_textures[2].blit(self.vector_x, self.vector_y3)
+            self.vector_textures[3].blit(self.vector_x, self.vector_y)
+            self.vector_textures[4].blit(self.vector_x, self.vector_y1)
+
 # Draw Loop
-def draw(dt):
-    theApp.draw(dt)
+def draw1(dt):
+    global window1
+    window1.switch_to()
+    theApp.draw1(dt)
+
+def draw2(dt):
+    global window2
+    window2.switch_to()
+    theApp.draw2(dt)
 
 theApp = MainApp()
 
-@window.event
+@window1.event
 def on_key_press(symbol, modifiers):
     global cur_vector
     print("SO: {}".format(symbol))
@@ -332,5 +355,6 @@ if __name__ == "__main__":
     if args.debug_outputs:
         theApp.setDebugOutputs(args.debug_outputs)
 
-    clock.schedule(draw)
+    pyglet.clock.schedule_interval(draw1, 1/60.0)
+    pyglet.clock.schedule_interval(draw2, 1)
     pyglet.app.run()
