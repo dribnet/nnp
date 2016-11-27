@@ -104,7 +104,15 @@ class MainApp():
         self.cur_frame = 0
         self.vector_textures = []
         for i in range(len(vector_files)):
-            vector_im = imread(vector_files[i])
+            png = Image.open(vector_files[i])
+            if png.mode == "RGBA":
+                png.load()
+                vector_im = Image.new("RGB", png.size, (0, 0, 0))
+                vector_im.paste(png, mask=png.split()[3]) # 3 is the alpha channel
+            else:
+                vector_im = png
+            vector_im = np.asarray(vector_im)
+            # vector_im = imread(vector_files[i], mode='RGB')
             if i == 0:
                 h, w, c = vector_im.shape
                 self.vector_x = int((window_width - w) / 2)
