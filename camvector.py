@@ -15,7 +15,7 @@ from discgen.interface import DiscGenModel
 from plat.utils import get_json_vectors, offset_from_string
 from plat.grid_layout import grid2img
 from PIL import Image
-from scipy.misc import imread, imsave
+from scipy.misc import imread, imsave, imresize
 
 num_vectors   = 4
 cur_vector    = 1
@@ -63,7 +63,6 @@ def image_to_texture(img):
     img  = np.flipud(img)
     img = img.ravel()
     image_texture = (GLubyte * number_of_bytes)( *img.astype('uint8') )
-    # my webcam happens to produce BGR; you may need 'RGB', 'RGBA', etc. instead
     pImg = pyglet.image.ImageData(sx,sy,'RGB',
            image_texture,pitch=sx*number_of_channels)
     return pImg
@@ -196,9 +195,18 @@ class MainApp():
             print("Initializing camera")
             self.camera = setup_camera()
 
+        if self.cur_frame == 5:
+            print("Fake key presses")
+            on_key_press(key.LEFT, None)
+
         if self.dmodel is None and self.model_name and self.cur_frame > 20:
             print("Initializing model {}".format(self.model_name))
             self.dmodel = DiscGenModel(filename=self.model_name)        
+
+        if self.cur_frame == 25:
+            print("Fake key presses")
+            on_key_press(key.LEFT, None)
+            on_key_press(key.LEFT, None)
 
         # get source image
         if self.camera:
@@ -217,14 +225,18 @@ class MainApp():
         self.vector_textures[vector_index].blit(self.vector_x, self.vector_y)
 
         if self.last_aligned_face is not None:
-            align_tex = image_to_texture(self.last_aligned_face)
             if self.one_shot_mode:
-                align_tex.blit(3 * window_width / 4 - 128, int((window_height - 256) / 2))
-                one_shot_source_tex = image_to_texture(self.one_shot_source)
-                one_shot_source_tex.blit(window_width / 4 - 128, int((window_height - 256) / 2))
+                aligned_small = imresize(self.last_aligned_face, (180, 180))
+                align_tex = image_to_texture(aligned_small)
+                # align_tex.blit(3 * window_width / 4 - 128, int((window_height - 256) / 2))
+                align_tex.blit(3 * window_width / 4 - 128 - 32, int((window_height - 180) / 2))
+                small_source = imresize(self.one_shot_source, (180, 180))
+                one_shot_source_tex = image_to_texture(small_source)
+                one_shot_source_tex.blit(window_width / 4 - 128 + 96, int((window_height - 180) / 2))
                 one_shot_face_tex = image_to_texture(self.one_shot_face)
                 one_shot_face_tex.blit(window_width / 2 - 128, window_height - 256)
             else:
+                align_tex = image_to_texture(self.last_aligned_face)
                 align_tex.blit(window_width / 2 - 128, window_height - self.last_aligned_face.shape[0])
 
             recon = self.get_recon_strip(self.last_aligned_face, self.dmodel)
