@@ -156,17 +156,18 @@ win2_angry_im = None
 class InputFileHandler(FileSystemEventHandler):
     def process(self, infile):
         global win2_aligned_im, win2_smile_im, win2_surprised_im, win2_angry_im
-        basename = os.path.basename(infile)
-        if basename[0] == '.' or basename[0] == '_':
-            print("Skipping infile: {}".format(infile))
-            return;
+        # basename = os.path.basename(infile)
+        # if basename[0] == '.' or basename[0] == '_':
+        #     print("Skipping infile: {}".format(infile))
+        #     return;
         print("Processing infile: {}".format(infile))
-        aligned_file = "{}/{}".format(aligned_dir, basename)
-        win2_aligned_im = imread(aligned_file, mode='RGB')
+        # aligned_file = "{}/{}".format(aligned_dir, basename)
+        # win2_aligned_im = imread(aligned_file, mode='RGB')
         img = imread(infile, mode='RGB')
         win2_smile_im = img[0:256,0:256,0:3]
         win2_surprised_im = img[0:256,256:512,0:3]
         win2_angry_im = img[0:256,512:768,0:3]
+        win2_aligned_im = img[0:256,768:1024,0:3]
         # if theApp is not None:
         #     draw2(None)
 
@@ -294,11 +295,14 @@ class MainApp():
         self.last_encoded_vector = encoded
         decode_list = []
         deblur_vector = vector_offsets[0]
-        for i in range(3):
-            scale_factor = 1.5
-            anchor_index = 0
-            attribute_vector = vector_offsets[anchor_index+i+1]
-            cur_anchor = encoded + scale_factor * attribute_vector + deblur_vector
+        for i in range(4):
+            if i == 3:
+                cur_anchor = encoded
+            else:
+                scale_factor = 1.5
+                anchor_index = 0
+                attribute_vector = vector_offsets[anchor_index+i+1]
+                cur_anchor = encoded + scale_factor * attribute_vector + deblur_vector
             decode_list.append(cur_anchor)
         decoded = dmodel.sample_at(np.array(decode_list))
         n, c, y, x = decoded.shape
