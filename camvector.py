@@ -36,10 +36,17 @@ cam_width = 720
 cam_height = 512
 
 vector_files = [
-    "images/vector_oneshot.png",
-    "images/vector_smile.png",
-    "images/vector_surprised.png",
-    "images/vector_angry.png",
+    "images/OneShot.png",
+    "images/Happy.png",
+    "images/Surprised.png",
+    "images/Angry.png",
+]
+
+small_vector_files = [
+    "images/OneShot.png",
+    "images/HappySmall.png",
+    "images/SurprisedSmall.png",
+    "images/AngrySmall.png",
 ]
 
 canned_faces = [
@@ -202,6 +209,7 @@ class MainApp():
     def __init__(self):
         self.cur_frame = 0
         self.vector_textures = []
+        self.small_vector_textures = []
         for i in range(len(vector_files)):
             png = Image.open(vector_files[i])
             if png.mode == "RGBA":
@@ -219,6 +227,24 @@ class MainApp():
                 self.vector_y1 = int(0)
                 self.vector_y3 = int(window_height - h)
             self.vector_textures.append(image_to_texture(vector_im))
+        for i in range(len(small_vector_files)):
+            png = Image.open(small_vector_files[i])
+            if png.mode == "RGBA":
+                png.load()
+                vector_im = Image.new("RGB", png.size, (0, 0, 0))
+                vector_im.paste(png, mask=png.split()[3]) # 3 is the alpha channel
+            else:
+                vector_im = png
+            vector_im = np.asarray(vector_im)
+            # vector_im = imread(vector_files[i], mode='RGB')
+            if i == 1:
+                h, w, c = vector_im.shape
+                print("ww, w, x", window_width, w, int((window_width - w) / 2))
+                self.small_vector_x = int((window_width - w) / 2)
+                self.small_vector_y = int((window_height - h) / 2)
+                self.small_vector_y1 = int(0)
+                self.small_vector_y3 = int(window_height - h)
+            self.small_vector_textures.append(image_to_texture(vector_im))
         self.cur_canned_face = -1
         self.canned_aligned_faces = []
         for i in range(len(canned_faces)):
@@ -388,13 +414,13 @@ class MainApp():
     def draw2(self, dt):
         global win2_aligned_im, win2_smile_im, win2_surprised_im, win2_angry_im
         if self.one_shot_mode:
-            self.vector_textures[0].blit(self.vector_x, self.vector_y3)
-            self.vector_textures[0].blit(self.vector_x, self.vector_y)
-            self.vector_textures[0].blit(self.vector_x, self.vector_y1)
+            self.small_vector_textures[0].blit(self.small_vector_x, self.small_vector_y3)
+            self.small_vector_textures[0].blit(self.small_vector_x, self.small_vector_y)
+            self.small_vector_textures[0].blit(self.small_vector_x, self.small_vector_y1)
         else:
-            self.vector_textures[1].blit(self.vector_x, self.vector_y3)
-            self.vector_textures[2].blit(self.vector_x, self.vector_y)
-            self.vector_textures[3].blit(self.vector_x, self.vector_y1)
+            self.small_vector_textures[1].blit(self.small_vector_x, self.small_vector_y3)
+            self.small_vector_textures[2].blit(self.small_vector_x, self.small_vector_y)
+            self.small_vector_textures[3].blit(self.small_vector_x, self.small_vector_y1)
             if win2_aligned_im is not None:
                 win2_aligned_tex = image_to_texture(win2_aligned_im)
                 win2_aligned_tex.blit(0, 0)
