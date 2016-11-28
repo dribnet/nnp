@@ -16,9 +16,14 @@ from plat.utils import get_json_vectors, offset_from_string
 from plat.grid_layout import grid2img
 from PIL import Image
 from scipy.misc import imread, imsave, imresize
+import subprocess
 
-num_vectors   = 4
-cur_vector    = 1
+import time
+from watchdog.observers import Observer
+from watchdog.events import FileSystemEventHandler
+
+num_vectors   = 3
+cur_vector    = 0
 do_clear = True
 
 theApp = None
@@ -32,7 +37,6 @@ cam_height = 512
 
 vector_files = [
     "images/vector_oneshot.png",
-    "images/vector_blur.png",
     "images/vector_smile.png",
     "images/vector_surprised.png",
     "images/vector_angry.png",
@@ -120,6 +124,61 @@ def do_key_press(symbol, modifiers):
         cv2.VideoCapture(0).release()
         sys.exit(0)
 
+def get_date_str():
+    return datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+
+pipeline_dir = "pipeline/{}".format(get_date_str())
+os.makedirs(pipeline_dir)
+aligned_dir = "{}/aligned".format(pipeline_dir)
+recon_dir = "{}/recon".format(pipeline_dir)
+atstrip1_dir = "{}/atstrip1".format(pipeline_dir)
+atstrip2_dir = "{}/atstrip2".format(pipeline_dir)
+os.makedirs(aligned_dir)
+os.makedirs(recon_dir)
+os.makedirs(atstrip1_dir)
+os.makedirs(atstrip2_dir)
+command = "CUDA_VISIBLE_DEVICES=1 \
+/usr/local/anaconda2/envs/enhance/bin/python \
+    ../neural-enhance3/enhance.py --model dlib_256_neupup1 --zoom 1 \
+    --device gpu0 \
+    --rendering-tile 256 \
+    --rendering-overlap 1 \
+    --input-directory {} \
+    --output-directory {} \
+    --watch".format(atstrip1_dir, atstrip2_dir)
+p=subprocess.Popen(command, shell=True)
+
+win2_aligned_im = None
+win2_smile_im = None
+win2_surprised_im = None
+win2_angry_im = None
+
+class InputFileHandler(FileSystemEventHandler):
+    def process(self, infile):
+        global win2_aligned_im, win2_smile_im, win2_surprised_im, win2_angry_im
+        basename = os.path.basename(infile)
+        if basename[0] == '.' or basename[0] == '_':
+            print("Skipping infile: {}".format(infile))
+            return;
+        print("Processing infile: {}".format(infile))
+        aligned_file = "{}/{}".format(aligned_dir, basename)
+        win2_aligned_im = imread(aligned_file, mode='RGB')
+        img = imread(infile, mode='RGB')
+        win2_smile_im = img[0:256,0:256,0:3]
+        win2_surprised_im = img[0:256,256:512,0:3]
+        win2_angry_im = img[0:256,512:768,0:3]
+        # if theApp is not None:
+        #     draw2(None)
+
+    def on_modified(self, event):
+        if not event.is_directory:
+            self.process(event.src_path)
+
+event_handler = InputFileHandler()
+observer = Observer()
+observer.schedule(event_handler, path=atstrip2_dir, recursive=False)
+observer.start()
+
 class MainApp():
     last_aligned_face = None
     last_recon_face = None
@@ -168,21 +227,21 @@ class MainApp():
     def setDebugOutputs(self, mode):
         self.debug_outputs = mode
 
-    def write_last_aligned(self, debugfile=False):
+    def write_last_aligned(self, debugfile=False, datestr=None):
         if self.last_aligned_face is None:
             return
         if debugfile:
             datestr = "debug"
-        else:
+        elif datestr is None:
             datestr = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-        filename = "pipeline/aligned/{}.png".format(datestr)
+        filename = "{}/{}.png".format(aligned_dir,datestr)
         if not debugfile and os.path.exists(filename):
             return
         imsave(filename, self.last_aligned_face)
 
         if self.last_recon_face is None:
             return
-        filename = "pipeline/recon/{}.png".format(datestr)    
+        filename = "{}/{}.png".format(recon_dir, datestr)    
         if not debugfile and os.path.exists(filename):
             return
         imsave(filename, self.last_recon_face)
@@ -213,7 +272,7 @@ class MainApp():
                 encoded = encode_from_image(self.one_shot_face, dmodel)
             else:
                 anchor_index = 0
-                attribute_vector = vector_offsets[anchor_index+cur_vector]
+                attribute_vector = vector_offsets[anchor_index+cur_vector+1]
             for i in range(5):
                 scale_factor = pr_map(i, 0, 5, -1.5, 1.5)
                 cur_anchor = encoded + scale_factor * attribute_vector + deblur_vector
@@ -223,6 +282,33 @@ class MainApp():
             decoded_strip = np.concatenate(decoded, axis=2)
             decoded_array = (255 * np.dstack(decoded_strip)).astype(np.uint8)
         return decoded_array
+
+    # get a triple of effects image. not for one-shot
+    def write_recon_triple(self, rawim, dmodel, datestr):
+        global vector_offsets
+
+        if dmodel is None or vector_offsets is None:
+            return None
+
+        encoded = encode_from_image(rawim, dmodel)
+        self.last_encoded_vector = encoded
+        decode_list = []
+        deblur_vector = vector_offsets[0]
+        for i in range(3):
+            scale_factor = 1.5
+            anchor_index = 0
+            attribute_vector = vector_offsets[anchor_index+i+1]
+            cur_anchor = encoded + scale_factor * attribute_vector + deblur_vector
+            decode_list.append(cur_anchor)
+        decoded = dmodel.sample_at(np.array(decode_list))
+        n, c, y, x = decoded.shape
+        decoded_strip = np.concatenate(decoded, axis=2)
+        decoded_array = (255 * np.dstack(decoded_strip)).astype(np.uint8)
+
+        filename = "{}/{}.png".format(atstrip1_dir, datestr)
+        if os.path.exists(filename):
+            return
+        imsave(filename, decoded_array)
 
     def draw1(self, dt):
         global window1, cur_vector, do_clear
@@ -239,7 +325,7 @@ class MainApp():
 
         if self.cur_frame == 5:
             print("Fake key presses")
-            do_key_press(key.LEFT, None)
+            # do_key_press(key.LEFT, None)
 
         if self.dmodel is None and self.model_name and self.cur_frame > 20:
             print("Initializing model {}".format(self.model_name))
@@ -247,8 +333,8 @@ class MainApp():
 
         if self.cur_frame == 25:
             print("Fake key presses")
-            do_key_press(key.LEFT, None)
-            do_key_press(key.LEFT, None)
+            # do_key_press(key.LEFT, None)
+            # do_key_press(key.LEFT, None)
 
         # get source image
         if self.camera:
@@ -296,14 +382,29 @@ class MainApp():
         return
 
     def draw2(self, dt):
+        global win2_aligned_im, win2_smile_im, win2_surprised_im, win2_angry_im
         if self.one_shot_mode:
             self.vector_textures[0].blit(self.vector_x, self.vector_y3)
             self.vector_textures[0].blit(self.vector_x, self.vector_y)
             self.vector_textures[0].blit(self.vector_x, self.vector_y1)
         else:
-            self.vector_textures[2].blit(self.vector_x, self.vector_y3)
-            self.vector_textures[3].blit(self.vector_x, self.vector_y)
-            self.vector_textures[4].blit(self.vector_x, self.vector_y1)
+            self.vector_textures[1].blit(self.vector_x, self.vector_y3)
+            self.vector_textures[2].blit(self.vector_x, self.vector_y)
+            self.vector_textures[3].blit(self.vector_x, self.vector_y1)
+            if win2_aligned_im is not None:
+                win2_aligned_tex = image_to_texture(win2_aligned_im)
+                win2_aligned_tex.blit(0, 0)
+                win2_aligned_tex.blit(0, int((window_height-256)/2))
+                win2_aligned_tex.blit(0, window_height-256)
+            if win2_smile_im is not None:
+                win2_smile_tex = image_to_texture(win2_smile_im)
+                win2_smile_tex.blit(window_width-256, window_height-256)
+            if win2_surprised_im is not None:
+                win2_surprised_tex = image_to_texture(win2_surprised_im)
+                win2_surprised_tex.blit(window_width-256, int((window_height-256)/2))
+            if win2_angry_im is not None:
+                win2_angry_tex = image_to_texture(win2_angry_im)
+                win2_angry_tex.blit(window_width-256, 0)
 
 # Draw Loop
 def draw1(dt):
@@ -316,10 +417,21 @@ def draw2(dt):
     window2.switch_to()
     theApp.draw2(dt)
 
+# snapshot the current state and write a file to the processing queue
+def snapshot(dt):
+    print("SNAPSHOT...")
+    if theApp.last_aligned_face is None:
+        return
+
+    datestr = get_date_str()
+    theApp.write_last_aligned(datestr=datestr)
+    if not theApp.one_shot_mode:
+        theApp.write_recon_triple(theApp.last_aligned_face, theApp.dmodel, datestr)
+
 theApp = MainApp()
 
 if __name__ == "__main__":
-    global window1, window2
+
     # argparse
     parser = argparse.ArgumentParser(description='Let get NIPSy')
     parser.add_argument("--model", dest='model', type=str, default=None,
@@ -377,6 +489,7 @@ if __name__ == "__main__":
         theApp.setDebugOutputs(args.debug_outputs)
 
     pyglet.clock.schedule_interval(draw1, 1/60.0)
+    pyglet.clock.schedule_interval(snapshot, 5)
     pyglet.clock.schedule_interval(draw2, 1)
     pyglet.app.run()
 
