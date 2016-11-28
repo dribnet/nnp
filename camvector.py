@@ -25,11 +25,8 @@ theApp = None
 vector_offsets = None
 window_height = 800
 window_width = 1280
-window1 = pyglet.window.Window(window_width, window_height, resizable=False)
-window1.set_location(0, 0)
-
-window2 = pyglet.window.Window(window_width, window_height, resizable=False)
-
+window1 = None
+window2 = None
 cam_width = 720
 cam_height = 512
 
@@ -83,6 +80,45 @@ def encode_from_image(rawim, dmodel):
 
 def pr_map(value, istart, istop, ostart, ostop):
     return ostart + (ostop - ostart) * ((value - istart) / float(istop - istart));
+
+def do_key_press(symbol, modifiers):
+    global cur_vector
+    print("SO: {}".format(symbol))
+    if(symbol == key.S):
+        if theApp.one_shot_mode:
+            theApp.one_shot_source = theApp.last_aligned_face
+            theApp.one_shot_source_vector = theApp.last_encoded_vector
+    if(symbol == key.DOWN):
+        if theApp.one_shot_mode:
+            theApp.cur_canned_face = (theApp.cur_canned_face - 1 + len(canned_faces)) % len(canned_faces)
+            theApp.one_shot_face = theApp.canned_aligned_faces[theApp.cur_canned_face]
+        else:
+            cur_vector = (cur_vector - 1 + num_vectors) % num_vectors
+    if(symbol == key.UP):
+        if theApp.one_shot_mode:
+            theApp.cur_canned_face = (theApp.cur_canned_face + 1) % len(canned_faces)
+            theApp.one_shot_face = theApp.canned_aligned_faces[theApp.cur_canned_face]
+        else:
+            cur_vector = (cur_vector + 1) % num_vectors
+    elif(symbol == key.LEFT or symbol == key.RIGHT):
+        if theApp.one_shot_mode:
+            theApp.one_shot_mode = False
+            do_clear = True
+        else:
+            theApp.one_shot_mode = True
+            theApp.one_shot_face = theApp.last_aligned_face
+            theApp.one_shot_source = theApp.last_aligned_face
+            theApp.one_shot_source_vector = theApp.last_encoded_vector
+            theApp.cur_canned_face = -1
+            do_clear = True
+    elif(symbol == key.SPACE):
+        print("SPACEBAR")
+        theApp.write_last_aligned();
+    elif(symbol == key.ESCAPE):
+        print("ESCAPE")
+        cv2.destroyAllWindows()
+        cv2.VideoCapture(0).release()
+        sys.exit(0)
 
 class MainApp():
     last_aligned_face = None
@@ -203,7 +239,7 @@ class MainApp():
 
         if self.cur_frame == 5:
             print("Fake key presses")
-            on_key_press(key.LEFT, None)
+            do_key_press(key.LEFT, None)
 
         if self.dmodel is None and self.model_name and self.cur_frame > 20:
             print("Initializing model {}".format(self.model_name))
@@ -211,8 +247,8 @@ class MainApp():
 
         if self.cur_frame == 25:
             print("Fake key presses")
-            on_key_press(key.LEFT, None)
-            on_key_press(key.LEFT, None)
+            do_key_press(key.LEFT, None)
+            do_key_press(key.LEFT, None)
 
         # get source image
         if self.camera:
@@ -282,47 +318,8 @@ def draw2(dt):
 
 theApp = MainApp()
 
-@window1.event
-def on_key_press(symbol, modifiers):
-    global cur_vector
-    print("SO: {}".format(symbol))
-    if(symbol == key.S):
-        if theApp.one_shot_mode:
-            theApp.one_shot_source = theApp.last_aligned_face
-            theApp.one_shot_source_vector = theApp.last_encoded_vector
-    if(symbol == key.DOWN):
-        if theApp.one_shot_mode:
-            theApp.cur_canned_face = (theApp.cur_canned_face - 1 + len(canned_faces)) % len(canned_faces)
-            theApp.one_shot_face = theApp.canned_aligned_faces[theApp.cur_canned_face]
-        else:
-            cur_vector = (cur_vector - 1 + num_vectors) % num_vectors
-    if(symbol == key.UP):
-        if theApp.one_shot_mode:
-            theApp.cur_canned_face = (theApp.cur_canned_face + 1) % len(canned_faces)
-            theApp.one_shot_face = theApp.canned_aligned_faces[theApp.cur_canned_face]
-        else:
-            cur_vector = (cur_vector + 1) % num_vectors
-    elif(symbol == key.LEFT or symbol == key.RIGHT):
-        if theApp.one_shot_mode:
-            theApp.one_shot_mode = False
-            do_clear = True
-        else:
-            theApp.one_shot_mode = True
-            theApp.one_shot_face = theApp.last_aligned_face
-            theApp.one_shot_source = theApp.last_aligned_face
-            theApp.one_shot_source_vector = theApp.last_encoded_vector
-            theApp.cur_canned_face = -1
-            do_clear = True
-    elif(symbol == key.SPACE):
-        print("SPACEBAR")
-        theApp.write_last_aligned();
-    elif(symbol == key.ESCAPE):
-        print("ESCAPE")
-        cv2.destroyAllWindows()
-        cv2.VideoCapture(0).release()
-        sys.exit(0)
-
 if __name__ == "__main__":
+    global window1, window2
     # argparse
     parser = argparse.ArgumentParser(description='Let get NIPSy')
     parser.add_argument("--model", dest='model', type=str, default=None,
@@ -335,7 +332,31 @@ if __name__ == "__main__":
                         help="disable camera")
     parser.add_argument('--debug-outputs', dest='debug_outputs', default=False, action='store_true',
                         help="write diagnostic output files each frame")
+    parser.add_argument('--full1', dest='full1', default=None, type=int,
+                        help="Index to screen to use for window one in fullscreen mode")
+    parser.add_argument('--full2', dest='full2', default=None, type=int,
+                        help="Index to screen to use for window two in fullscreen mode")
     args = parser.parse_args()
+
+    display = pyglet.window.get_platform().get_default_display()
+    screens = display.get_screens()
+    if args.full1 is not None:
+        window1 = pyglet.window.Window(fullscreen=True, screen=screens[args.full1])
+    else:
+        window1 = pyglet.window.Window(window_width, window_height, resizable=False)
+        window1.set_location(0, 0)
+
+    @window1.event
+    def on_key_press(symbol, modifiers):
+        do_key_press(symbol, modifiers)
+
+    if args.full2 is not None:
+        window2 = pyglet.window.Window(fullscreen=True, screen=screens[args.full2])
+    else:
+        window2 = pyglet.window.Window(window_width, window_height, resizable=False)
+        window1.set_location(100, 100)
+
+    print(window2)
 
     input_image = cv2.imread(args.input_image, cv2.IMREAD_COLOR)
     theApp.input_image = cv2.cvtColor(input_image, cv2.COLOR_BGR2RGB)
@@ -358,3 +379,7 @@ if __name__ == "__main__":
     pyglet.clock.schedule_interval(draw1, 1/60.0)
     pyglet.clock.schedule_interval(draw2, 1)
     pyglet.app.run()
+
+@window1.event
+def on_key_press(symbol, modifiers):
+    do_key_press(symbol, modifiers)
