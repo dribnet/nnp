@@ -293,22 +293,18 @@ class MainApp():
                 decode_list.append(rawim)
             decoded = np.array(decode_list)
             decoded_array = np.concatenate(decoded, axis=1)
-            print(decoded_array.shape)
             return decoded_array
 
         encoded = encode_from_image(rawim, dmodel_cur)
-        print("Encoded from {} is {}".format(dmodel_cur, encoded.shape))
         self.last_encoded_vector = encoded
         decode_list = []
         if self.gan_mode:
             vector_index_start = 0
             cur_vector_offsets = vector_offsets2
-            print("Choosing 2 {}".format(cur_vector_offsets[0].shape))
             deblur_vector = None
         else:
             vector_index_start = 1
             cur_vector_offsets = vector_offsets
-            print("Choosing {}".format(cur_vector_offsets[0].shape))
             deblur_vector = vector_offsets[0]
         if self.one_shot_mode:
             if self.one_shot_source_vector is not None:
@@ -323,7 +319,6 @@ class MainApp():
             attribute_vector = cur_vector_offsets[vector_index_start+cur_vector]
         for i in range(5):
             scale_factor = pr_map(i, 0, 5, -1.5, 1.5)
-            print("Encoded is : {}, attribute_vec is {}".format(encoded.shape, attribute_vector.shape))
             cur_anchor = encoded + scale_factor * attribute_vector
             if not self.gan_mode:
                 cur_anchor += deblur_vector
@@ -337,36 +332,50 @@ class MainApp():
         return decoded_array
 
     # get a triple of effects image. not for one-shot
-    def write_recon_triple(self, rawim, dmodel, datestr):
-        global vector_offsets
-        if self.gan_mode:
-            return
+    def write_recon_triple(self, rawim, dmodel_cur, datestr):
+        global vector_offsets, vector_offsets2
+        global win2_aligned_im, win2_smile_im, win2_surprised_im, win2_angry_im
 
-        if dmodel is None or vector_offsets is None:
+        if dmodel_cur is None or (not self.gan_mode and vector_offsets is None) or (self.gan_mode and vector_offsets2 is None):
             return None
 
-        encoded = encode_from_image(rawim, dmodel)
+        encoded = encode_from_image(rawim, dmodel_cur)
         self.last_encoded_vector = encoded
         decode_list = []
-        deblur_vector = vector_offsets[0]
+        if self.gan_mode:
+            vector_index_start = 0
+            cur_vector_offsets = vector_offsets2
+            deblur_vector = None
+        else:
+            vector_index_start = 1
+            cur_vector_offsets = vector_offsets
+            deblur_vector = vector_offsets[0]
         for i in range(4):
             if i == 3:
                 cur_anchor = encoded
             else:
                 scale_factor = 1.5
-                anchor_index = 0
-                attribute_vector = vector_offsets[anchor_index+i+1]
-                cur_anchor = encoded + scale_factor * attribute_vector + deblur_vector
+                attribute_vector = cur_vector_offsets[vector_index_start+i]
+                cur_anchor = encoded + scale_factor * attribute_vector
+                if not self.gan_mode:
+                    cur_anchor += deblur_vector
             decode_list.append(cur_anchor)
-        decoded = dmodel.sample_at(np.array(decode_list))
+        decoded = dmodel_cur.sample_at(np.array(decode_list))
         n, c, y, x = decoded.shape
         decoded_strip = np.concatenate(decoded, axis=2)
         decoded_array = (255 * np.dstack(decoded_strip)).astype(np.uint8)
 
-        filename = "{}/{}.png".format(atstrip1_dir, datestr)
-        if os.path.exists(filename):
-            return
-        imsave(filename, decoded_array)
+        if self.gan_mode:
+            decoded_array = imresize(decoded_array, 2.0)
+            win2_smile_im = decoded_array[0:256,0:256,0:3]
+            win2_surprised_im = decoded_array[0:256,256:512,0:3]
+            win2_angry_im = decoded_array[0:256,512:768,0:3]
+            win2_aligned_im = decoded_array[0:256,768:1024,0:3]
+        else:
+            filename = "{}/{}.png".format(atstrip1_dir, datestr)
+            if os.path.exists(filename):
+                return
+            imsave(filename, decoded_array)
 
     def draw1(self, dt):
         global window1, cur_vector, do_clear
@@ -431,7 +440,6 @@ class MainApp():
                 align_tex.blit(window_width / 2 - 128, window_height - self.last_aligned_face.shape[0])
 
             if self.gan_mode and self.dmodel2 is not None:
-                print("Dmodel2 is still {}".format(self.dmodel2))
                 recon = self.get_recon_strip(self.last_aligned_face, self.dmodel2)
             else:
                 recon = self.get_recon_strip(self.last_aligned_face, self.dmodel)
@@ -493,7 +501,11 @@ def snapshot(dt):
     datestr = get_date_str()
     theApp.write_last_aligned(datestr=datestr)
     if not theApp.one_shot_mode:
-        theApp.write_recon_triple(theApp.last_aligned_face, theApp.dmodel, datestr)
+        if theApp.gan_mode and theApp.dmodel2 is not None:
+            theApp.write_recon_triple(theApp.last_aligned_face, theApp.dmodel2, datestr)
+        else:
+            theApp.write_recon_triple(theApp.last_aligned_face, theApp.dmodel, datestr)
+
 
 theApp = MainApp()
 
@@ -543,8 +555,6 @@ if __name__ == "__main__":
         window2 = pyglet.window.Window(window_width, window_height, resizable=False)
         window1.set_location(100, 100)
 
-    print(window2)
-
     input_image = cv2.imread(args.input_image, cv2.IMREAD_COLOR)
     theApp.input_image = cv2.cvtColor(input_image, cv2.COLOR_BGR2RGB)
 
@@ -560,7 +570,6 @@ if __name__ == "__main__":
         vector_offsets = [ -1 * offset_from_string(offset_indexes[0], offsets, dim) ]
         for i in range(len(offset_indexes) - 1):
             vector_offsets.append(offset_from_string(offset_indexes[i+1], offsets, dim))
-        print("===> Setup 1 {}".format(vector_offsets[0].shape))
 
     if args.anchor_offset2 is not None:
         anchor_indexes = "0,1,2"
@@ -570,7 +579,6 @@ if __name__ == "__main__":
         vector_offsets2 = []
         for i in range(len(offset_indexes)):
             vector_offsets2.append(offset_from_string(offset_indexes[i], offsets, dim))
-        print("===> Setup 2 {}".format(vector_offsets2[0].shape))
 
     if args.debug_outputs:
         theApp.setDebugOutputs(args.debug_outputs)
