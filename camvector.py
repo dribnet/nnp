@@ -43,7 +43,7 @@ vector_files = [
 ]
 
 small_vector_files = [
-    "images/OneShot.png",
+    "images/OneShotSmall.png",
     "images/HappySmall.png",
     "images/SurprisedSmall.png",
     "images/AngrySmall.png",
@@ -57,8 +57,8 @@ canned_faces = [
     "images/yann.jpg",
 ]
 
-def setup_camera():
-    cam = cv2.VideoCapture(0)
+def setup_camera(device_number):
+    cam = cv2.VideoCapture(device_number)
     result1 = cam.set(cv2.CAP_PROP_FRAME_WIDTH,cam_width)
     result2 = cam.set(cv2.CAP_PROP_FRAME_HEIGHT,cam_height)
     result3 = cam.set(cv2.CAP_PROP_FPS,1)
@@ -239,11 +239,10 @@ class MainApp():
             # vector_im = imread(vector_files[i], mode='RGB')
             if i == 1:
                 h, w, c = vector_im.shape
-                print("ww, w, x", window_width, w, int((window_width - w) / 2))
                 self.small_vector_x = int((window_width - w) / 2)
                 self.small_vector_y = int((window_height - h) / 2)
-                self.small_vector_y1 = int(0)
-                self.small_vector_y3 = int(window_height - h)
+                self.small_vector_y1 = int((256 - h) / 2)
+                self.small_vector_y3 = int(window_height-(256/2) - h/2)
             self.small_vector_textures.append(image_to_texture(vector_im))
         self.cur_canned_face = -1
         self.canned_aligned_faces = []
@@ -351,7 +350,7 @@ class MainApp():
         # initialize camera and dmodel after warming up
         if self.camera is None and self.use_camera and self.cur_frame > 10:
             print("Initializing camera")
-            self.camera = setup_camera()
+            self.camera = setup_camera(self.camera_device)
 
         if self.cur_frame == 5:
             print("Fake key presses")
@@ -478,7 +477,11 @@ if __name__ == "__main__":
                         help="Index to screen to use for window one in fullscreen mode")
     parser.add_argument('--full2', dest='full2', default=None, type=int,
                         help="Index to screen to use for window two in fullscreen mode")
+    parser.add_argument('--camera', dest='camera', default=1, type=int,
+                        help="Camera device number")
     args = parser.parse_args()
+
+    theApp.camera_device = args.camera
 
     display = pyglet.window.get_platform().get_default_display()
     screens = display.get_screens()
