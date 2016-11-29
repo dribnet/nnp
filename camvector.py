@@ -12,6 +12,7 @@ import datetime
 import sys
 import os
 from discgen.interface import DiscGenModel
+from ali.interface import AliModel
 from plat.utils import get_json_vectors, offset_from_string
 from plat.grid_layout import grid2img
 from PIL import Image
@@ -28,6 +29,7 @@ do_clear = True
 
 theApp = None
 vector_offsets = None
+vector_offsets2 = None
 window_height = 800
 window_width = 1280
 window1 = None
@@ -99,6 +101,11 @@ def do_key_press(symbol, modifiers):
         if theApp.one_shot_mode:
             theApp.one_shot_source = theApp.last_aligned_face
             theApp.one_shot_source_vector = theApp.last_encoded_vector
+    if(symbol == key.G):
+        theApp.gan_mode = not theApp.gan_mode
+        theApp.last_encoded_vector = None
+        theApp.last_recon_face = None
+        print("GAN mode is now {}".format(theApp.gan_mode))
     if(symbol == key.DOWN):
         if theApp.one_shot_mode:
             theApp.cur_canned_face = (theApp.cur_canned_face - 1 + len(canned_faces)) % len(canned_faces)
@@ -153,7 +160,9 @@ command = "CUDA_VISIBLE_DEVICES=1 \
     --input-directory {} \
     --output-directory {} \
     --watch".format(atstrip1_dir, atstrip2_dir)
-p=subprocess.Popen(command, shell=True)
+with open("enhance.sh", "w+") as text_file:
+    text_file.write(command)
+# p=subprocess.Popen(command, shell=True)
 
 win2_aligned_im = None
 win2_smile_im = None
@@ -201,8 +210,11 @@ class MainApp():
     use_camera = True
     camera = None
     model_name = None
+    model_name2 = None
     dmodel = None
+    dmodel2 = None
     one_shot_mode = False
+    gan_mode = False
     cur_canned_face = -1;
 
     """Just a container for unfortunate global state"""
@@ -272,46 +284,63 @@ class MainApp():
             return
         imsave(filename, self.last_recon_face)
 
-    def get_recon_strip(self, rawim, dmodel):
-        global vector_offsets, cur_vector
+    def get_recon_strip(self, rawim, dmodel_cur):
+        global vector_offsets, vector_offsets2, cur_vector
 
-        if dmodel is None or vector_offsets is None:
+        if dmodel_cur is None or (not self.gan_mode and vector_offsets is None) or (self.gan_mode and vector_offsets2 is None):
             decode_list = []
             for i in range(5):
                 decode_list.append(rawim)
             decoded = np.array(decode_list)
             decoded_array = np.concatenate(decoded, axis=1)
             print(decoded_array.shape)
+            return decoded_array
+
+        encoded = encode_from_image(rawim, dmodel_cur)
+        print("Encoded from {} is {}".format(dmodel_cur, encoded.shape))
+        self.last_encoded_vector = encoded
+        decode_list = []
+        if self.gan_mode:
+            vector_index_start = 0
+            cur_vector_offsets = vector_offsets2
+            print("Choosing 2 {}".format(cur_vector_offsets[0].shape))
+            deblur_vector = None
         else:
-            encoded = encode_from_image(rawim, dmodel)
-            self.last_encoded_vector = encoded
-            decode_list = []
+            vector_index_start = 1
+            cur_vector_offsets = vector_offsets
+            print("Choosing {}".format(cur_vector_offsets[0].shape))
             deblur_vector = vector_offsets[0]
-            if self.one_shot_mode:
-                if self.one_shot_source_vector is not None:
-                    # compute attribute vector
-                    attribute_vector = encoded - self.one_shot_source_vector
-                else:
-                    # smile is debug ?
-                    attribute_vector = vector_offsets[1]
-                # override encoded to be one_shot_face
-                encoded = encode_from_image(self.one_shot_face, dmodel)
+        if self.one_shot_mode:
+            if self.one_shot_source_vector is not None:
+                # compute attribute vector
+                attribute_vector = encoded - self.one_shot_source_vector
             else:
-                anchor_index = 0
-                attribute_vector = vector_offsets[anchor_index+cur_vector+1]
-            for i in range(5):
-                scale_factor = pr_map(i, 0, 5, -1.5, 1.5)
-                cur_anchor = encoded + scale_factor * attribute_vector + deblur_vector
-                decode_list.append(cur_anchor)
-            decoded = dmodel.sample_at(np.array(decode_list))
-            n, c, y, x = decoded.shape
-            decoded_strip = np.concatenate(decoded, axis=2)
-            decoded_array = (255 * np.dstack(decoded_strip)).astype(np.uint8)
+                # smile is debug ?
+                attribute_vector = cur_vector_offsets[vector_index_start]
+            # override encoded to be one_shot_face
+            encoded = encode_from_image(self.one_shot_face, dmodel_cur)
+        else:
+            attribute_vector = cur_vector_offsets[vector_index_start+cur_vector]
+        for i in range(5):
+            scale_factor = pr_map(i, 0, 5, -1.5, 1.5)
+            print("Encoded is : {}, attribute_vec is {}".format(encoded.shape, attribute_vector.shape))
+            cur_anchor = encoded + scale_factor * attribute_vector
+            if not self.gan_mode:
+                cur_anchor += deblur_vector
+            decode_list.append(cur_anchor)
+        decoded = dmodel_cur.sample_at(np.array(decode_list))
+        n, c, y, x = decoded.shape
+        decoded_strip = np.concatenate(decoded, axis=2)
+        decoded_array = (255 * np.dstack(decoded_strip)).astype(np.uint8)
+        if self.gan_mode:
+            decoded_array = imresize(decoded_array, 2.0)
         return decoded_array
 
     # get a triple of effects image. not for one-shot
     def write_recon_triple(self, rawim, dmodel, datestr):
         global vector_offsets
+        if self.gan_mode:
+            return
 
         if dmodel is None or vector_offsets is None:
             return None
@@ -360,9 +389,14 @@ class MainApp():
             print("Initializing model {}".format(self.model_name))
             self.dmodel = DiscGenModel(filename=self.model_name)        
 
-        if self.cur_frame == 25:
+        if self.dmodel2 is None and self.model_name2 and self.cur_frame > 30:
+            print("Initializing model {}".format(self.model_name2))
+            self.dmodel2 = AliModel(filename=self.model_name2)
+            print("Dmodel2 is {}".format(self.dmodel2))
+
+        if self.cur_frame == 35:
             print("Fake key presses")
-            # do_key_press(key.LEFT, None)
+            do_key_press(key.G, None)
             # do_key_press(key.LEFT, None)
 
         # get source image
@@ -396,7 +430,11 @@ class MainApp():
                 align_tex = image_to_texture(self.last_aligned_face)
                 align_tex.blit(window_width / 2 - 128, window_height - self.last_aligned_face.shape[0])
 
-            recon = self.get_recon_strip(self.last_aligned_face, self.dmodel)
+            if self.gan_mode and self.dmodel2 is not None:
+                print("Dmodel2 is still {}".format(self.dmodel2))
+                recon = self.get_recon_strip(self.last_aligned_face, self.dmodel2)
+            else:
+                recon = self.get_recon_strip(self.last_aligned_face, self.dmodel)
             if recon is not None:
                 self.last_recon_face = recon
                 recon_tex = image_to_texture(recon)
@@ -465,8 +503,12 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Let get NIPSy')
     parser.add_argument("--model", dest='model', type=str, default=None,
                         help="path to the saved model")
+    parser.add_argument("--model2", dest='model2', type=str, default=None,
+                        help="path to the saved ali model")
     parser.add_argument('--anchor-offset', dest='anchor_offset', default=None,
                         help="use json file as source of each anchors offsets")
+    parser.add_argument('--anchor-offset2', dest='anchor_offset2', default=None,
+                        help="use json file as source of each ali anchors offsets")
     parser.add_argument('--input-image', dest='input_image', default="images/startup_face.jpg",
                         help="use this input image instead of camera")
     parser.add_argument('--no-camera', dest='no_camera', default=False, action='store_true',
@@ -508,6 +550,7 @@ if __name__ == "__main__":
 
     theApp.use_camera = not args.no_camera
     theApp.model_name = args.model
+    theApp.model_name2 = args.model2
 
     if args.anchor_offset is not None:
         anchor_indexes = "0,1,2,3"
@@ -517,6 +560,17 @@ if __name__ == "__main__":
         vector_offsets = [ -1 * offset_from_string(offset_indexes[0], offsets, dim) ]
         for i in range(len(offset_indexes) - 1):
             vector_offsets.append(offset_from_string(offset_indexes[i+1], offsets, dim))
+        print("===> Setup 1 {}".format(vector_offsets[0].shape))
+
+    if args.anchor_offset2 is not None:
+        anchor_indexes = "0,1,2"
+        offsets = get_json_vectors(args.anchor_offset2)
+        dim = len(offsets[0])
+        offset_indexes = anchor_indexes.split(",")
+        vector_offsets2 = []
+        for i in range(len(offset_indexes)):
+            vector_offsets2.append(offset_from_string(offset_indexes[i], offsets, dim))
+        print("===> Setup 2 {}".format(vector_offsets2[0].shape))
 
     if args.debug_outputs:
         theApp.setDebugOutputs(args.debug_outputs)
