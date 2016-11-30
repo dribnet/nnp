@@ -13,9 +13,11 @@ import sys
 import os
 from discgen.interface import DiscGenModel
 from ali.interface import AliModel
-from plat.utils import get_json_vectors, offset_from_string, vectors_from_json_filelist
+from plat.utils import offset_from_string, vectors_from_json_filelist, json_list_to_array
+from plat.bin.atvec import do_roc
 from plat.grid_layout import grid2img
 from plat.sampling import real_glob
+from plat.fuel_helper import get_dataset_iterator
 from PIL import Image
 from scipy.misc import imread, imsave, imresize
 import subprocess
@@ -149,10 +151,12 @@ aligned_dir = "{}/aligned".format(pipeline_dir)
 recon_dir = "{}/recon".format(pipeline_dir)
 atstrip1_dir = "{}/atstrip1".format(pipeline_dir)
 atstrip2_dir = "{}/atstrip2".format(pipeline_dir)
+roc_dir = "{}/roc".format(pipeline_dir)
 os.makedirs(aligned_dir)
 os.makedirs(recon_dir)
 os.makedirs(atstrip1_dir)
 os.makedirs(atstrip2_dir)
+os.makedirs(roc_dir)
 command = "CUDA_VISIBLE_DEVICES=1 \
 /usr/local/anaconda2/envs/enhance/bin/python \
     ../neural-enhance3/enhance.py --model dlib_256_neupup1 --zoom 1 \
@@ -530,7 +534,6 @@ def snapshot(dt):
         else:
             theApp.write_recon_triple(theApp.last_aligned_face, theApp.dmodel, datestr)
 
-
 theApp = MainApp()
 
 if __name__ == "__main__":
@@ -561,6 +564,17 @@ if __name__ == "__main__":
                         help="Index to screen to use for window two in fullscreen mode")
     parser.add_argument('--camera', dest='camera', default=1, type=int,
                         help="Camera device number")
+    parser.add_argument("--encoded-vectors", type=str, default=None,
+                        help="Comma separated list of json arrays")
+    parser.add_argument('--dataset', dest='dataset', default=None,
+                        help="Source dataset (for labels).")
+    parser.add_argument('--labels', dest='labels', default=None,
+                        help="Text file with 0/1 labels.")
+    parser.add_argument('--split', dest='split', default="valid",
+                        help="Which split to use from the dataset (train/nontrain/valid/test/any).")
+    parser.add_argument('--roc-limit', dest='roc_limit', default=10000, type=int,
+                        help="Limit roc operation to this many vectors")
+
     args = parser.parse_args()
 
     theApp.camera_device = args.camera
@@ -607,6 +621,24 @@ if __name__ == "__main__":
         vector_offsets2 = []
         for i in range(len(offset_indexes)):
             vector_offsets2.append(offset_from_string(offset_indexes[i], offsets, dim))
+
+    if args.encoded_vectors is not None and (args.dataset is not None or args.labels is not None):
+        encoded = json_list_to_array(args.encoded_vectors)
+        num_rows, z_dim = encoded.shape
+        if args.dataset:
+            attribs = np.array(list(get_dataset_iterator(args.dataset, args.split, include_features=False, include_targets=True)))
+        else:
+            attribs = get_attribs_from_file(args.labels)
+        encoded = encoded[:args.roc_limit]
+        attribs = attribs[:args.roc_limit]
+        print("encoded vectors: {}, attributes: {} ".format(encoded.shape, attribs.shape))
+
+        attribute_index = 31
+        chosen_vector = vector_offsets[1]
+        dim = len(chosen_vector)
+        threshold = None
+        outfile = "{}/{}.png".format(roc_dir, get_date_str())
+        do_roc(chosen_vector, encoded, attribs, attribute_index, threshold, outfile)
 
     if args.debug_outputs:
         theApp.setDebugOutputs(args.debug_outputs)
