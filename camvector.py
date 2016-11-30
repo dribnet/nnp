@@ -13,8 +13,9 @@ import sys
 import os
 from discgen.interface import DiscGenModel
 from ali.interface import AliModel
-from plat.utils import get_json_vectors, offset_from_string
+from plat.utils import get_json_vectors, offset_from_string, vectors_from_json_filelist
 from plat.grid_layout import grid2img
+from plat.sampling import real_glob
 from PIL import Image
 from scipy.misc import imread, imsave, imresize
 import subprocess
@@ -105,6 +106,7 @@ def do_key_press(symbol, modifiers):
         theApp.gan_mode = not theApp.gan_mode
         theApp.last_encoded_vector = None
         theApp.last_recon_face = None
+        theApp.reset_aligned_face()
         print("GAN mode is now {}".format(theApp.gan_mode))
     if(symbol == key.DOWN):
         if theApp.one_shot_mode:
@@ -216,6 +218,9 @@ class MainApp():
     one_shot_mode = False
     gan_mode = False
     cur_canned_face = -1;
+    cur_aligned_face_number = 0
+    last_saved_aligned_face_number = 0
+    last_draw1_aligned_face_number = 0
 
     """Just a container for unfortunate global state"""
     def __init__(self):
@@ -264,6 +269,10 @@ class MainApp():
 
     def setDebugOutputs(self, mode):
         self.debug_outputs = mode
+
+    def reset_aligned_face(self):
+        self.last_saved_aligned_face_number = 0
+        self.last_draw1_aligned_face_number = 0
 
     def write_last_aligned(self, debugfile=False, datestr=None):
         if self.last_aligned_face is None:
@@ -367,15 +376,18 @@ class MainApp():
 
         if self.gan_mode:
             decoded_array = imresize(decoded_array, 2.0)
-            win2_smile_im = decoded_array[0:256,0:256,0:3]
-            win2_surprised_im = decoded_array[0:256,256:512,0:3]
-            win2_angry_im = decoded_array[0:256,512:768,0:3]
-            win2_aligned_im = decoded_array[0:256,768:1024,0:3]
-        else:
+
+        win2_smile_im = decoded_array[0:256,0:256,0:3]
+        win2_surprised_im = decoded_array[0:256,256:512,0:3]
+        win2_angry_im = decoded_array[0:256,512:768,0:3]
+        win2_aligned_im = decoded_array[0:256,768:1024,0:3]
+
+        if not self.gan_mode:
             filename = "{}/{}.png".format(atstrip1_dir, datestr)
             if os.path.exists(filename):
                 return
             imsave(filename, decoded_array)
+
 
     def draw1(self, dt):
         global window1, cur_vector, do_clear
@@ -396,16 +408,18 @@ class MainApp():
 
         if self.dmodel is None and self.model_name and self.cur_frame > 20:
             print("Initializing model {}".format(self.model_name))
-            self.dmodel = DiscGenModel(filename=self.model_name)        
+            self.dmodel = DiscGenModel(filename=self.model_name)
+            theApp.reset_aligned_face()
 
         if self.dmodel2 is None and self.model_name2 and self.cur_frame > 30:
             print("Initializing model {}".format(self.model_name2))
             self.dmodel2 = AliModel(filename=self.model_name2)
             print("Dmodel2 is {}".format(self.dmodel2))
+            theApp.reset_aligned_face()
 
         if self.cur_frame == 35:
             print("Fake key presses")
-            do_key_press(key.G, None)
+            # do_key_press(key.G, None)
             # do_key_press(key.LEFT, None)
 
         # get source image
@@ -417,6 +431,7 @@ class MainApp():
         align_im = get_aligned(img)
         if align_im is not None:
             self.last_aligned_face = align_im
+            theApp.cur_aligned_face_number = theApp.cur_aligned_face_number + 1
 
         if self.one_shot_mode:
             vector_index = 0
@@ -424,7 +439,8 @@ class MainApp():
             vector_index = cur_vector + 1
         self.vector_textures[vector_index].blit(self.vector_x, self.vector_y)
 
-        if self.last_aligned_face is not None:
+        if self.last_aligned_face is not None and theApp.cur_aligned_face_number != theApp.last_draw1_aligned_face_number:
+            theApp.last_draw1_aligned_face_number = theApp.cur_aligned_face_number
             if self.one_shot_mode:
                 aligned_small = imresize(self.last_aligned_face, (180, 180))
                 align_tex = image_to_texture(aligned_small)
@@ -494,9 +510,17 @@ def draw2(dt):
 
 # snapshot the current state and write a file to the processing queue
 def snapshot(dt):
-    print("SNAPSHOT...")
     if theApp.last_aligned_face is None:
+        print("skipping snapshot - no aligned face")
         return
+
+    if theApp.last_saved_aligned_face_number == theApp.cur_aligned_face_number:
+        print("skipping snapshot - no new face")
+        return
+
+    theApp.last_saved_aligned_face_number = theApp.cur_aligned_face_number
+
+    print("SNAPSHOT: saving")
 
     datestr = get_date_str()
     theApp.write_last_aligned(datestr=datestr)
@@ -521,6 +545,10 @@ if __name__ == "__main__":
                         help="use json file as source of each anchors offsets")
     parser.add_argument('--anchor-offset2', dest='anchor_offset2', default=None,
                         help="use json file as source of each ali anchors offsets")
+    parser.add_argument('--anchor-index', dest='anchor_index', default="0,1,2,3",
+                        help="indexes to offsets in anchor-offset")    
+    parser.add_argument('--anchor-index2', dest='anchor_index2', default="0,1,2,3",
+                        help="indexes to offsets in anchor-offset2")    
     parser.add_argument('--input-image', dest='input_image', default="images/startup_face.jpg",
                         help="use this input image instead of camera")
     parser.add_argument('--no-camera', dest='no_camera', default=False, action='store_true',
@@ -563,19 +591,19 @@ if __name__ == "__main__":
     theApp.model_name2 = args.model2
 
     if args.anchor_offset is not None:
-        anchor_indexes = "0,1,2,3"
-        offsets = get_json_vectors(args.anchor_offset)
+        anchor_index = args.anchor_index
+        offsets = vectors_from_json_filelist(real_glob(args.anchor_offset))
         dim = len(offsets[0])
-        offset_indexes = anchor_indexes.split(",")
+        offset_indexes = anchor_index.split(",")
         vector_offsets = [ -1 * offset_from_string(offset_indexes[0], offsets, dim) ]
         for i in range(len(offset_indexes) - 1):
             vector_offsets.append(offset_from_string(offset_indexes[i+1], offsets, dim))
 
     if args.anchor_offset2 is not None:
-        anchor_indexes = "0,1,2"
-        offsets = get_json_vectors(args.anchor_offset2)
+        anchor_index = args.anchor_index2
+        offsets = vectors_from_json_filelist(real_glob(args.anchor_offset2))
         dim = len(offsets[0])
-        offset_indexes = anchor_indexes.split(",")
+        offset_indexes = anchor_index.split(",")
         vector_offsets2 = []
         for i in range(len(offset_indexes)):
             vector_offsets2.append(offset_from_string(offset_indexes[i], offsets, dim))
