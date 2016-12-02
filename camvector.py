@@ -43,15 +43,15 @@ cam_height = 512
 vector_files = [
     "images/OneShot.png",
     "images/Happy.png",
-    "images/Surprised.png",
     "images/Angry.png",
+    "images/Sunglasses.png",
 ]
 
 small_vector_files = [
     "images/OneShotSmall.png",
     "images/HappySmall.png",
-    "images/SurprisedSmall.png",
     "images/AngrySmall.png",
+    "images/SunglassesSmall.png",
 ]
 
 canned_faces = [
