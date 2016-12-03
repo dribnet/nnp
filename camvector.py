@@ -76,11 +76,11 @@ small_vector_files = [
 # starter images
 canned_faces = [
     "images/startup_face.jpg",
+    "images/yann.png",
+    "images/fei_fei.png",
     "images/bengio.jpg",
     "images/demis.jpg",
-    "images/fei_fei.png",
     "images/geoffrey.jpg",
-    "images/yann.png",
 ]
 
 # initialize and return camera handle
@@ -179,10 +179,11 @@ def do_key_press(symbol, modifiers):
         theApp.one_shot_mode = True
         theApp.cur_vector_source = theApp.cur_canned_face
         theApp.cur_vector_dest = theApp.cur_canned_face
+        snapshot(None)
         do_clear = True
     elif(symbol == key.SPACE):
         print("SPACEBAR")
-        snapshot();
+        snapshot(None);
     elif(symbol == key.ESCAPE):
         print("ESCAPE")
         cv2.destroyAllWindows()
@@ -223,6 +224,12 @@ win2_aligned_im = None
 win2_smile_im = None
 win2_surprised_im = None
 win2_angry_im = None
+win2_oneshot_a1 = None
+win2_oneshot_a2 = None
+win2_oneshot_b1 = None
+win2_oneshot_b2 = None
+win2_oneshot_c1 = None
+win2_oneshot_c2 = None
 
 # watcher to load win2 images on filesystem change
 class InputFileHandler(FileSystemEventHandler):
@@ -320,6 +327,7 @@ class MainApp():
         self.canned_encoded = []
         self.canned_textures = []
         self.canned_small_textures = []
+        self.canned_smaller_textures = []
         self.num_canned = len(canned_faces)
         for i in range(self.num_canned):
             canned_face = imread(canned_faces[i])
@@ -327,6 +335,7 @@ class MainApp():
             self.canned_encoded.append(None)
             self.canned_textures.append(None)
             self.canned_small_textures.append(None)
+            self.canned_smaller_textures.append(None)
 
     def setDebugOutputs(self, mode):
         self.debug_outputs = mode
@@ -452,6 +461,79 @@ class MainApp():
                 return
             imsave(filename, decoded_array)
 
+    # get a triple of effects image. not for one-shot
+    def write_oneshot_sixpack(self, dmodel_cur, datestr, scale_factor):
+        global win2_oneshot_a1, win2_oneshot_a2, win2_oneshot_b1, win2_oneshot_b2, win2_oneshot_c1, win2_oneshot_c2
+
+        win2_oneshot_a1 = self.canned_aligned[1]
+        win2_oneshot_a2 = self.canned_aligned[1]
+        win2_oneshot_b1 = self.canned_aligned[2]
+        win2_oneshot_b2 = self.canned_aligned[2]
+        win2_oneshot_c1 = self.canned_aligned[3]
+        win2_oneshot_c2 = self.canned_aligned[3]
+        return None
+
+        # if dmodel_cur is None or (not self.gan_mode and vector_offsets is None) or (self.gan_mode and vector_offsets2 is None):
+        #     win2_oneshot_a1 = self.canned_aligned[1]
+        #     win2_oneshot_a2 = self.canned_aligned[1]
+        #     win2_oneshot_b1 = self.canned_aligned[2]
+        #     win2_oneshot_b2 = self.canned_aligned[2]
+        #     win2_oneshot_c1 = self.canned_aligned[3]
+        #     win2_oneshot_c2 = self.canned_aligned[3]
+        #     return None
+
+        # encoded_source_image = self.get_encoded(dmodel_cur, self.cur_canned_face, scale_factor)
+        # decode_list = []
+        # if self.gan_mode:
+        #     vector_index_start = 0
+        #     cur_vector_offsets = vector_offsets2
+        #     deblur_vector = None
+        # else:
+        #     vector_index_start = 1
+        #     cur_vector_offsets = vector_offsets
+        #     deblur_vector = vector_offsets[0]
+        # for i in range(4):
+        #     if i == 3:
+        #         cur_anchor = encoded_source_image
+        #     else:
+        #         scale_factor = 1.5
+        #         attribute_vector = cur_vector_offsets[vector_index_start+i]
+        #         cur_anchor = encoded_source_image + scale_factor * attribute_vector
+        #         if not self.gan_mode:
+        #             cur_anchor += deblur_vector
+        #     decode_list.append(cur_anchor)
+        # decoded = dmodel_cur.sample_at(np.array(decode_list))
+        # n, c, y, x = decoded.shape
+        # decoded_strip = np.concatenate(decoded, axis=2)
+        # decoded_array = (255 * np.dstack(decoded_strip)).astype(np.uint8)
+
+        # if scale_factor is not None:
+        #     decoded_array = imresize(decoded_array, self.scale_factor)
+        # elif self.gan_mode:
+        #     decoded_array = imresize(decoded_array, 2.0)
+
+        # win2_smile_im = decoded_array[0:256,0:256,0:3]
+        # win2_surprised_im = decoded_array[0:256,256:512,0:3]
+        # win2_angry_im = decoded_array[0:256,512:768,0:3]
+        # win2_aligned_im = decoded_array[0:256,768:1024,0:3]
+
+        # if not self.gan_mode:
+        #     filename = "{}/{}.png".format(atstrip1_dir, datestr)
+        #     if os.path.exists(filename):
+        #         return
+        #     imsave(filename, decoded_array)
+
+    def get_small_texture(self, image_index, super_small=False):
+        if super_small:
+            if self.canned_smaller_textures[image_index] is None:
+                small_source = imresize(self.canned_aligned[image_index], (138, 138))
+                self.canned_smaller_textures[image_index] = image_to_texture(small_source)
+            return self.canned_smaller_textures[image_index]
+        else:
+            if self.canned_small_textures[image_index] is None:
+                small_source = imresize(self.canned_aligned[image_index], (164, 164))
+                self.canned_small_textures[image_index] = image_to_texture(small_source)
+            return self.canned_small_textures[image_index]
 
     def draw1(self, dt):
         global window1, cur_vector, do_clear
@@ -487,19 +569,20 @@ class MainApp():
             # do_key_press(key.LEFT, None)
 
         # get source image
-        if self.camera is not None and theApp.camera_recording:
+        if theApp.arrow_mode == ARROW_MODE_IMAGE_SOURCE:
+            face_index = theApp.cur_canned_face
+        elif theApp.arrow_mode == ARROW_MODE_VECTOR_SOURCE:
+            face_index = theApp.cur_vector_source
+        else:
+            face_index = theApp.cur_vector_dest
+        if self.camera is not None and face_index == 0 and theApp.camera_recording:
             candidate = get_aligned(get_camera_image(self.camera))
             if candidate is not None:
-                if theApp.arrow_mode == ARROW_MODE_IMAGE_SOURCE:
-                    face_index = theApp.cur_canned_face
-                elif theApp.arrow_mode == ARROW_MODE_VECTOR_SOURCE:
-                    face_index = theApp.cur_vector_source
-                else:
-                    face_index = theApp.cur_vector_dest
                 theApp.canned_aligned[face_index] = candidate
                 theApp.canned_encoded[face_index] = None
                 theApp.canned_textures[face_index] = None
                 theApp.canned_small_textures[face_index] = None
+                theApp.canned_smaller_textures[face_index] = None
 
         align_im = theApp.canned_aligned[theApp.cur_canned_face]
 
@@ -512,19 +595,13 @@ class MainApp():
         if True:
             theApp.last_draw1_aligned_face_number = theApp.cur_aligned_face_number
             if self.one_shot_mode:
-                if self.canned_small_textures[self.cur_vector_source] is None:
-                    small_source = imresize(self.canned_aligned[self.cur_vector_source], (164, 164))
-                    self.canned_small_textures[self.cur_vector_source] = image_to_texture(small_source)
-
+                source_tex = self.get_small_texture(self.cur_vector_source)
                 source_x, source_y = self.vector_x + 176, self.vector_y + 11
-                self.canned_small_textures[self.cur_vector_source].blit(source_x, source_y)
+                source_tex.blit(source_x, source_y)
 
-                if self.canned_small_textures[self.cur_vector_dest] is None:
-                    small_source = imresize(self.canned_aligned[self.cur_vector_dest], (164, 164))
-                    self.canned_small_textures[self.cur_vector_dest] = image_to_texture(small_source)
-
+                dest_tex = self.get_small_texture(self.cur_vector_dest)
                 source_x, source_y = self.vector_x + 688, self.vector_y + 11
-                self.canned_small_textures[self.cur_vector_dest] .blit(source_x, source_y)
+                dest_tex.blit(source_x, source_y)
 
             if self.canned_textures[self.cur_canned_face] is None:
                 self.canned_textures[self.cur_canned_face] = image_to_texture(self.canned_aligned[self.cur_canned_face])
@@ -548,13 +625,45 @@ class MainApp():
         self.cur_frame += 1
         return
 
+    def draw_oneshot_small(self, vector_y, source_tex, dest_tex):
+        self.small_vector_textures[0].blit(self.small_vector_x, vector_y)
+        source_x, source_y = self.small_vector_x + 90, vector_y + 24
+        source_tex.blit(source_x, source_y)
+        dest_x, dest_y = self.small_vector_x + 540, vector_y + 24
+        dest_tex.blit(dest_x, dest_y)
+
     def draw2(self, dt):
         window2.clear()
         global win2_aligned_im, win2_smile_im, win2_surprised_im, win2_angry_im
+        global win2_oneshot_a1, win2_oneshot_a2, win2_oneshot_b1, win2_oneshot_b2, win2_oneshot_c1, win2_oneshot_c2
         if self.one_shot_mode:
-            self.small_vector_textures[0].blit(self.small_vector_x, self.small_vector_y3)
-            self.small_vector_textures[0].blit(self.small_vector_x, self.small_vector_y)
-            self.small_vector_textures[0].blit(self.small_vector_x, self.small_vector_y1)
+            if win2_oneshot_a1 is not None:
+                oneshot_tex = image_to_texture(win2_oneshot_a1)
+                oneshot_tex.blit(0, window_height-256)
+            if win2_oneshot_a2 is not None:
+                oneshot_tex = image_to_texture(win2_oneshot_a2)
+                oneshot_tex.blit(window_width-256, window_height-256)
+            if win2_oneshot_b1 is not None:
+                oneshot_tex = image_to_texture(win2_oneshot_b1)
+                oneshot_tex.blit(0, int((window_height-256)/2))
+            if win2_oneshot_b2 is not None:
+                oneshot_tex = image_to_texture(win2_oneshot_b2)
+                oneshot_tex.blit(window_width-256, int((window_height-256)/2))
+            if win2_oneshot_c1 is not None:
+                oneshot_tex = image_to_texture(win2_oneshot_c1)
+                oneshot_tex.blit(0, 0)
+            if win2_oneshot_c2 is not None:
+                oneshot_tex = image_to_texture(win2_oneshot_c2)
+                oneshot_tex.blit(window_width-256, 0)
+
+            source_tex = self.get_small_texture(self.cur_vector_source, True)
+            dest_tex = self.get_small_texture(self.cur_vector_dest, True)
+            # top
+            self.draw_oneshot_small(self.small_vector_y3, source_tex, dest_tex)
+            # middle
+            self.draw_oneshot_small(self.small_vector_y, source_tex, dest_tex)
+            # bottom
+            self.draw_oneshot_small(self.small_vector_y1, source_tex, dest_tex)
         else:
             self.small_vector_textures[1].blit(self.small_vector_x, self.small_vector_y3)
             self.small_vector_textures[2].blit(self.small_vector_x, self.small_vector_y)
@@ -600,6 +709,12 @@ def snapshot(dt):
             theApp.write_recon_triple(theApp.dmodel2, datestr, 2)
         else:
             theApp.write_recon_triple(theApp.dmodel, datestr, theApp.scale_factor)
+    else:
+        if theApp.gan_mode and theApp.dmodel2 is not None:
+            theApp.write_oneshot_sixpack(theApp.dmodel2, datestr, 2)
+        else:
+            theApp.write_oneshot_sixpack(theApp.dmodel, datestr, theApp.scale_factor)
+
 
 theApp = MainApp()
 
