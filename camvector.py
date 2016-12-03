@@ -37,8 +37,10 @@ window_height = 800
 window_width = 1280
 window1 = None
 window2 = None
-cam_width = 720
-cam_height = 512
+# cam_width = 720
+# cam_height = 512
+cam_width = 400
+cam_height = 300
 
 vector_files = [
     "images/OneShot.png",
@@ -397,7 +399,7 @@ class MainApp():
         global window1, cur_vector, do_clear
 
         # clear window only sometimes
-        if do_clear:
+        if do_clear or True:
             window1.clear()
             do_clear = False
 
@@ -477,6 +479,7 @@ class MainApp():
         return
 
     def draw2(self, dt):
+        window2.clear()
         global win2_aligned_im, win2_smile_im, win2_surprised_im, win2_angry_im
         if self.one_shot_mode:
             self.small_vector_textures[0].blit(self.small_vector_x, self.small_vector_y3)
