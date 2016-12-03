@@ -143,7 +143,8 @@ def do_key_press(symbol, modifiers):
     elif(symbol == key.ESCAPE):
         print("ESCAPE")
         cv2.destroyAllWindows()
-        cv2.VideoCapture(0).release()
+        if theApp.use_camera:
+            cv2.VideoCapture(0).release()
         sys.exit(0)
 
 def get_date_str():
@@ -357,6 +358,10 @@ class MainApp():
         global win2_aligned_im, win2_smile_im, win2_surprised_im, win2_angry_im
 
         if dmodel_cur is None or (not self.gan_mode and vector_offsets is None) or (self.gan_mode and vector_offsets2 is None):
+            win2_smile_im = rawim
+            win2_surprised_im = rawim
+            win2_angry_im = rawim
+            win2_aligned_im = rawim
             return None
 
         encoded = encode_from_image(rawim, dmodel_cur, scale_factor)
@@ -514,11 +519,15 @@ class MainApp():
 # Draw Loop
 def draw1(dt):
     global window1
+    if window1 == None:
+        return
     window1.switch_to()
     theApp.draw1(dt)
 
 def draw2(dt):
     global window2
+    if window2 == None:
+        return
     window2.switch_to()
     theApp.draw2(dt)
 
@@ -566,6 +575,10 @@ if __name__ == "__main__":
                         help="use this input image instead of camera")
     parser.add_argument('--no-camera', dest='no_camera', default=False, action='store_true',
                         help="disable camera")
+    parser.add_argument('--skip1', dest='skip1', default=False, action='store_true',
+                        help="no window 1")
+    parser.add_argument('--skip2', dest='skip2', default=False, action='store_true',
+                        help="no window 2")
     parser.add_argument('--debug-outputs', dest='debug_outputs', default=False, action='store_true',
                         help="write diagnostic output files each frame")
     parser.add_argument('--full1', dest='full1', default=None, type=int,
@@ -594,21 +607,30 @@ if __name__ == "__main__":
 
     display = pyglet.window.get_platform().get_default_display()
     screens = display.get_screens()
-    if args.full1 is not None:
+    if args.skip1:
+        window1 = None
+    elif args.full1 is not None:
         window1 = pyglet.window.Window(fullscreen=True, screen=screens[args.full1])
     else:
         window1 = pyglet.window.Window(window_width, window_height, resizable=False)
         window1.set_location(0, 0)
 
-    @window1.event
-    def on_key_press(symbol, modifiers):
-        do_key_press(symbol, modifiers)
-
-    if args.full2 is not None:
+    if args.skip2:
+        window2 = None
+    elif args.full2 is not None:
         window2 = pyglet.window.Window(fullscreen=True, screen=screens[args.full2])
     else:
         window2 = pyglet.window.Window(window_width, window_height, resizable=False)
-        window1.set_location(100, 100)
+        window2.set_location(100, 100)
+
+    if window1 is not None:
+        @window1.event
+        def on_key_press(symbol, modifiers):
+            do_key_press(symbol, modifiers)
+    if window2 is not None:
+        @window2.event
+        def on_key_press(symbol, modifiers):
+            do_key_press(symbol, modifiers)
 
     input_image = cv2.imread(args.input_image, cv2.IMREAD_COLOR)
     theApp.input_image = cv2.cvtColor(input_image, cv2.COLOR_BGR2RGB)
@@ -660,7 +682,3 @@ if __name__ == "__main__":
     pyglet.clock.schedule_interval(snapshot, 5)
     pyglet.clock.schedule_interval(draw2, 1)
     pyglet.app.run()
-
-@window1.event
-def on_key_press(symbol, modifiers):
-    do_key_press(symbol, modifiers)
