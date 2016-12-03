@@ -42,6 +42,10 @@ window2 = None
 cam_width = 400
 cam_height = 300
 
+ARROW_MODE_VECTOR_SOURCE = 1
+ARROW_MODE_VECTOR_DEST = 2
+ARROW_MODE_IMAGE_SOURCE = 3
+
 vector_files = [
     "images/OneShot.png",
     "images/Happy.png",
@@ -102,13 +106,24 @@ def encode_from_image(rawim, dmodel, scale_factor=None):
 def pr_map(value, istart, istop, ostart, ostop):
     return ostart + (ostop - ostart) * ((value - istart) / float(istop - istart));
 
+def canned_face_up(cur_index):
+    return (cur_index + 1) % len(canned_faces)
+
+def canned_face_down(cur_index):
+    return (cur_index - 1 + len(canned_faces)) % len(canned_faces)
+
 def do_key_press(symbol, modifiers):
     global cur_vector
     print("SO: {}".format(symbol))
-    if(symbol == key.S):
-        if theApp.one_shot_mode:
-            theApp.one_shot_source = theApp.last_aligned_face
-            theApp.one_shot_source_vector = theApp.last_encoded_vector
+    if(symbol == key.R):
+        theApp.camera_recording = not theApp.camera_recording
+        print("Camera recording is now {}".format(theApp.camera_recording))
+    elif(symbol == key.A):
+        theApp.arrow_mode = ARROW_MODE_IMAGE_SOURCE
+    elif(symbol == key.S):
+        theApp.arrow_mode = ARROW_MODE_VECTOR_SOURCE
+    elif(symbol == key.D):
+        theApp.arrow_mode = ARROW_MODE_VECTOR_DEST
     elif(symbol == key.G):
         theApp.gan_mode = not theApp.gan_mode
         theApp.last_encoded_vector = None
@@ -116,11 +131,19 @@ def do_key_press(symbol, modifiers):
         theApp.reset_aligned_face()
         print("GAN mode is now {}".format(theApp.gan_mode))
     elif(symbol == key.DOWN):
-        theApp.cur_canned_face = (theApp.cur_canned_face - 1 + len(canned_faces)) % len(canned_faces)
-        theApp.one_shot_face = theApp.canned_aligned_faces[theApp.cur_canned_face]
+        if theApp.arrow_mode == ARROW_MODE_IMAGE_SOURCE:
+            theApp.cur_canned_face = canned_face_down(theApp.cur_canned_face)
+        elif theApp.arrow_mode == ARROW_MODE_VECTOR_DEST:
+            theApp.cur_vector_dest = canned_face_down(theApp.cur_vector_dest)
+        elif theApp.arrow_mode == ARROW_MODE_VECTOR_SOURCE:
+            theApp.cur_vector_source = canned_face_down(theApp.cur_vector_source)
     elif(symbol == key.UP):
-        theApp.cur_canned_face = (theApp.cur_canned_face + 1) % len(canned_faces)
-        theApp.one_shot_face = theApp.canned_aligned_faces[theApp.cur_canned_face]
+        if theApp.arrow_mode == ARROW_MODE_IMAGE_SOURCE:
+            theApp.cur_canned_face = canned_face_up(theApp.cur_canned_face)
+        elif theApp.arrow_mode == ARROW_MODE_VECTOR_DEST:
+            theApp.cur_vector_dest = canned_face_up(theApp.cur_vector_dest)
+        elif theApp.arrow_mode == ARROW_MODE_VECTOR_SOURCE:
+            theApp.cur_vector_source = canned_face_up(theApp.cur_vector_source)
     elif(symbol == key.LEFT):
         cur_vector = (cur_vector - 1 + num_vectors) % num_vectors
     elif(symbol == key.RIGHT):
@@ -128,14 +151,13 @@ def do_key_press(symbol, modifiers):
     elif(symbol == key.Z):
         # three vectors mode
         theApp.one_shot_mode = False
+        theApp.arrow_mode = ARROW_MODE_IMAGE_SOURCE
         do_clear = True
     elif(symbol == key.X):
         # one_shot mode
         theApp.one_shot_mode = True
-        theApp.one_shot_face = theApp.last_aligned_face
-        theApp.one_shot_source = theApp.last_aligned_face
-        theApp.one_shot_source_vector = theApp.last_encoded_vector
-        theApp.cur_canned_face = -1
+        theApp.cur_vector_source = theApp.cur_canned_face
+        theApp.cur_vector_dest = theApp.cur_canned_face
         do_clear = True
     elif(symbol == key.SPACE):
         print("SPACEBAR")
@@ -211,8 +233,6 @@ class MainApp():
     last_aligned_face = None
     last_recon_face = None
     last_encoded_vector = None
-    one_shot_face = None
-    one_shot_source = None
     one_shot_source_vector = None
     debug_outputs = False
     framecount = 0
@@ -225,11 +245,15 @@ class MainApp():
     dmodel2 = None
     one_shot_mode = False
     gan_mode = False
-    cur_canned_face = -1;
+    cur_canned_face = 0
+    cur_vector_source = 0
+    cur_vector_dest  = 0
     cur_aligned_face_number = 0
     last_saved_aligned_face_number = 0
     last_draw1_aligned_face_number = 0
     scale_factor = None
+    arrow_mode = ARROW_MODE_IMAGE_SOURCE
+    camera_recording = False
 
     """Just a container for unfortunate global state"""
     def __init__(self):
@@ -271,10 +295,17 @@ class MainApp():
                 self.small_vector_y3 = int(window_height-(256/2) - h/2)
             self.small_vector_textures.append(image_to_texture(vector_im))
         self.cur_canned_face = 0
-        self.canned_aligned_faces = []
-        for i in range(len(canned_faces)):
+        self.canned_aligned = []
+        self.canned_encoded = []
+        self.canned_textures = []
+        self.canned_small_textures = []
+        self.num_canned = len(canned_faces)
+        for i in range(self.num_canned):
             canned_face = imread(canned_faces[i])
-            self.canned_aligned_faces.append(get_aligned(canned_face))
+            self.canned_aligned.append(get_aligned(canned_face))
+            self.canned_encoded.append(None)
+            self.canned_textures.append(None)
+            self.canned_small_textures.append(None)
 
     def setDebugOutputs(self, mode):
         self.debug_outputs = mode
@@ -332,7 +363,7 @@ class MainApp():
                 # smile is debug ?
                 attribute_vector = cur_vector_offsets[vector_index_start]
             # override encoded to be one_shot_face
-            encoded = encode_from_image(self.one_shot_face, dmodel_cur, scale_factor)
+            encoded = encode_from_image(self.canned_aligned[self.cur_vector_dest], dmodel_cur, scale_factor)
         else:
             attribute_vector = cur_vector_offsets[vector_index_start+cur_vector]
         for i in range(5):
@@ -440,12 +471,23 @@ class MainApp():
             # do_key_press(key.LEFT, None)
 
         # get source image
-        if self.camera is not None and theApp.cur_canned_face == 0:
-            img = get_camera_image(self.camera)
-        else:
-            img = theApp.canned_aligned_faces[theApp.cur_canned_face]
+        if self.camera is not None and theApp.camera_recording:
+            candidate = get_aligned(get_camera_image(self.camera))
+            if candidate is not None:
+                if theApp.arrow_mode == ARROW_MODE_IMAGE_SOURCE:
+                    face_index = theApp.cur_canned_face
+                elif theApp.arrow_mode == ARROW_MODE_VECTOR_SOURCE:
+                    face_index = theApp.cur_vector_source
+                else:
+                    face_index = theApp.cur_vector_dest
+                theApp.canned_aligned[face_index] = candidate
+                theApp.canned_encoded[face_index] = None
+                theApp.canned_textures[face_index] = None
+                theApp.canned_small_textures[face_index] = None
 
-        align_im = get_aligned(img)
+        align_im = theApp.canned_aligned[theApp.cur_canned_face]
+
+        # align_im = get_aligned(img)
         if align_im is not None:
             self.last_aligned_face = align_im
             theApp.cur_aligned_face_number = theApp.cur_aligned_face_number + 1
@@ -456,23 +498,27 @@ class MainApp():
             vector_index = cur_vector + 1
         self.vector_textures[vector_index].blit(self.vector_x, self.vector_y)
 
-        if self.last_aligned_face is not None and theApp.cur_aligned_face_number != theApp.last_draw1_aligned_face_number:
+        if True:
             theApp.last_draw1_aligned_face_number = theApp.cur_aligned_face_number
             if self.one_shot_mode:
-                aligned_small = imresize(self.last_aligned_face, (164, 164))
-                align_tex = image_to_texture(aligned_small)
-                source_x, source_y = self.vector_x + 688, self.vector_y + 11
-                # align_tex.blit(3 * window_width / 4 - 128, int((window_height - 256) / 2))
-                align_tex.blit(source_x, source_y)
-                small_source = imresize(self.one_shot_source, (164, 164))
-                one_shot_source_tex = image_to_texture(small_source)
+                if self.canned_small_textures[self.cur_vector_source] is None:
+                    small_source = imresize(self.canned_aligned[self.cur_vector_source], (164, 164))
+                    self.canned_small_textures[self.cur_vector_source] = image_to_texture(small_source)
+
                 source_x, source_y = self.vector_x + 176, self.vector_y + 11
-                one_shot_source_tex.blit(source_x, source_y)
-                one_shot_face_tex = image_to_texture(self.one_shot_face)
-                one_shot_face_tex.blit(window_width / 2 - 128, window_height - 256)
-            else:
-                align_tex = image_to_texture(self.last_aligned_face)
-                align_tex.blit(window_width / 2 - 128, window_height - self.last_aligned_face.shape[0])
+                self.canned_small_textures[self.cur_vector_source].blit(source_x, source_y)
+
+                if self.canned_small_textures[self.cur_vector_dest] is None:
+                    small_source = imresize(self.canned_aligned[self.cur_vector_dest], (164, 164))
+                    self.canned_small_textures[self.cur_vector_dest] = image_to_texture(small_source)
+
+                source_x, source_y = self.vector_x + 688, self.vector_y + 11
+                self.canned_small_textures[self.cur_vector_dest] .blit(source_x, source_y)
+
+            if self.canned_textures[self.cur_canned_face] is None:
+                self.canned_textures[self.cur_canned_face] = image_to_texture(self.canned_aligned[self.cur_canned_face])
+
+            self.canned_textures[self.cur_canned_face].blit(window_width / 2 - 128, window_height - 256)
 
             if self.gan_mode and self.dmodel2 is not None:
                 recon = self.get_recon_strip(self.last_aligned_face, self.dmodel2, 2)
