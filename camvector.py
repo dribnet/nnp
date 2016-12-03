@@ -78,7 +78,7 @@ canned_faces = [
     "images/startup_face.jpg",
     "images/bengio.jpg",
     "images/demis.jpg",
-    "images/fei_fei.jpg",
+    "images/fei_fei.png",
     "images/geoffrey.jpg",
     "images/yann.png",
 ]
@@ -343,14 +343,14 @@ class MainApp():
         filename = "{}/{}.png".format(aligned_dir,datestr)
         if not debugfile and os.path.exists(filename):
             return
-        imsave(filename, self.last_aligned_face)
+        imsave(filename, self.canned_aligned[theApp.cur_canned_face])
 
         filename = "{}/{}.png".format(recon_dir, datestr)    
         if not debugfile and os.path.exists(filename):
             return
         imsave(filename, self.canned_aligned[self.cur_canned_face])
 
-    def get_encoded(image_index):
+    def get_encoded(self, dmodel_cur, image_index, scale_factor):
         if self.canned_encoded[image_index] is None:
             self.canned_encoded[image_index] = encode_from_image(self.canned_aligned[image_index], dmodel_cur, scale_factor)
         return self.canned_encoded[image_index]
@@ -366,7 +366,7 @@ class MainApp():
             decoded_array = np.concatenate(decoded, axis=1)
             return decoded_array
 
-        encoded_source_image = get_encoded(self.cur_canned_face)
+        encoded_source_image = self.get_encoded(dmodel_cur, self.cur_canned_face, scale_factor)
 
         decode_list = []
         if self.gan_mode:
@@ -378,8 +378,8 @@ class MainApp():
             cur_vector_offsets = vector_offsets
             deblur_vector = vector_offsets[0]
         if self.one_shot_mode:
-            encoded_vector_source = get_encoded(self.cur_vector_source)
-            encoded_vector_dest = get_encoded(self.cur_vector_dest)
+            encoded_vector_source = self.get_encoded(dmodel_cur, self.cur_vector_source, scale_factor)
+            encoded_vector_dest = self.get_encoded(dmodel_cur, self.cur_vector_dest, scale_factor)
             attribute_vector = encoded_vector_dest - encoded_vector_source
         else:
             attribute_vector = cur_vector_offsets[vector_index_start+cur_vector]
@@ -411,7 +411,7 @@ class MainApp():
             win2_aligned_im = self.canned_aligned[self.cur_canned_face]
             return None
 
-        encoded_source_image = get_encoded(self.cur_canned_face)
+        encoded_source_image = self.get_encoded(dmodel_cur, self.cur_canned_face, scale_factor)
         decode_list = []
         if self.gan_mode:
             vector_index_start = 0
@@ -461,14 +461,14 @@ class MainApp():
             window1.clear()
             do_clear = False
 
+        if self.cur_frame == 5:
+            print("Fake key presses")
+            # do_key_press(key.LEFT, None)
+
         # initialize camera and dmodel after warming up
         if self.camera is None and self.use_camera and self.cur_frame > 10:
             print("Initializing camera")
             self.camera = setup_camera(self.camera_device)
-
-        if self.cur_frame == 5:
-            print("Fake key presses")
-            # do_key_press(key.LEFT, None)
 
         if self.dmodel is None and self.model_name and self.cur_frame > 20:
             print("Initializing model {}".format(self.model_name))
@@ -502,11 +502,6 @@ class MainApp():
                 theApp.canned_small_textures[face_index] = None
 
         align_im = theApp.canned_aligned[theApp.cur_canned_face]
-
-        # align_im = get_aligned(img)
-        if align_im is not None:
-            self.last_aligned_face = align_im
-            theApp.cur_aligned_face_number = theApp.cur_aligned_face_number + 1
 
         if self.one_shot_mode:
             vector_index = 0
