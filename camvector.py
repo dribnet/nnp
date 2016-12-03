@@ -90,7 +90,9 @@ def get_aligned(img):
     success, im_resize, rect = doalign.align_face_buffer(img, 256, max_extension_amount=0)
     return im_resize
 
-def encode_from_image(rawim, dmodel):
+def encode_from_image(rawim, dmodel, scale_factor=None):
+    if scale_factor is not None:
+        rawim = imresize(rawim, 1.0 / scale_factor)
     mixedim = np.asarray([[rawim[:,:,0], rawim[:,:,1], rawim[:,:,2]]])
     entry = (mixedim / 255.0).astype('float32')
     encoded = dmodel.encode_images(entry)[0]
@@ -227,6 +229,7 @@ class MainApp():
     cur_aligned_face_number = 0
     last_saved_aligned_face_number = 0
     last_draw1_aligned_face_number = 0
+    scale_factor = None
 
     """Just a container for unfortunate global state"""
     def __init__(self):
@@ -299,7 +302,7 @@ class MainApp():
             return
         imsave(filename, self.last_recon_face)
 
-    def get_recon_strip(self, rawim, dmodel_cur):
+    def get_recon_strip(self, rawim, dmodel_cur, scale_factor):
         global vector_offsets, vector_offsets2, cur_vector
 
         if dmodel_cur is None or (not self.gan_mode and vector_offsets is None) or (self.gan_mode and vector_offsets2 is None):
@@ -310,7 +313,7 @@ class MainApp():
             decoded_array = np.concatenate(decoded, axis=1)
             return decoded_array
 
-        encoded = encode_from_image(rawim, dmodel_cur)
+        encoded = encode_from_image(rawim, dmodel_cur, scale_factor)
         self.last_encoded_vector = encoded
         decode_list = []
         if self.gan_mode:
@@ -329,7 +332,7 @@ class MainApp():
                 # smile is debug ?
                 attribute_vector = cur_vector_offsets[vector_index_start]
             # override encoded to be one_shot_face
-            encoded = encode_from_image(self.one_shot_face, dmodel_cur)
+            encoded = encode_from_image(self.one_shot_face, dmodel_cur, scale_factor)
         else:
             attribute_vector = cur_vector_offsets[vector_index_start+cur_vector]
         for i in range(5):
@@ -342,19 +345,21 @@ class MainApp():
         n, c, y, x = decoded.shape
         decoded_strip = np.concatenate(decoded, axis=2)
         decoded_array = (255 * np.dstack(decoded_strip)).astype(np.uint8)
-        if self.gan_mode:
+        if self.scale_factor is not None:
+            decoded_array = imresize(decoded_array, self.scale_factor)
+        elif self.gan_mode:
             decoded_array = imresize(decoded_array, 2.0)
         return decoded_array
 
     # get a triple of effects image. not for one-shot
-    def write_recon_triple(self, rawim, dmodel_cur, datestr):
+    def write_recon_triple(self, rawim, dmodel_cur, datestr, scale_factor):
         global vector_offsets, vector_offsets2
         global win2_aligned_im, win2_smile_im, win2_surprised_im, win2_angry_im
 
         if dmodel_cur is None or (not self.gan_mode and vector_offsets is None) or (self.gan_mode and vector_offsets2 is None):
             return None
 
-        encoded = encode_from_image(rawim, dmodel_cur)
+        encoded = encode_from_image(rawim, dmodel_cur, scale_factor)
         self.last_encoded_vector = encoded
         decode_list = []
         if self.gan_mode:
@@ -380,7 +385,9 @@ class MainApp():
         decoded_strip = np.concatenate(decoded, axis=2)
         decoded_array = (255 * np.dstack(decoded_strip)).astype(np.uint8)
 
-        if self.gan_mode:
+        if scale_factor is not None:
+            decoded_array = imresize(decoded_array, self.scale_factor)
+        elif self.gan_mode:
             decoded_array = imresize(decoded_array, 2.0)
 
         win2_smile_im = decoded_array[0:256,0:256,0:3]
@@ -462,9 +469,9 @@ class MainApp():
                 align_tex.blit(window_width / 2 - 128, window_height - self.last_aligned_face.shape[0])
 
             if self.gan_mode and self.dmodel2 is not None:
-                recon = self.get_recon_strip(self.last_aligned_face, self.dmodel2)
+                recon = self.get_recon_strip(self.last_aligned_face, self.dmodel2, 2)
             else:
-                recon = self.get_recon_strip(self.last_aligned_face, self.dmodel)
+                recon = self.get_recon_strip(self.last_aligned_face, self.dmodel, self.scale_factor)
             if recon is not None:
                 self.last_recon_face = recon
                 recon_tex = image_to_texture(recon)
@@ -533,9 +540,9 @@ def snapshot(dt):
     theApp.write_last_aligned(datestr=datestr)
     if not theApp.one_shot_mode:
         if theApp.gan_mode and theApp.dmodel2 is not None:
-            theApp.write_recon_triple(theApp.last_aligned_face, theApp.dmodel2, datestr)
+            theApp.write_recon_triple(theApp.last_aligned_face, theApp.dmodel2, datestr, 2)
         else:
-            theApp.write_recon_triple(theApp.last_aligned_face, theApp.dmodel, datestr)
+            theApp.write_recon_triple(theApp.last_aligned_face, theApp.dmodel, datestr, theApp.scale_factor)
 
 theApp = MainApp()
 
@@ -577,10 +584,13 @@ if __name__ == "__main__":
                         help="Which split to use from the dataset (train/nontrain/valid/test/any).")
     parser.add_argument('--roc-limit', dest='roc_limit', default=10000, type=int,
                         help="Limit roc operation to this many vectors")
+    parser.add_argument('--scale-factor', dest='scale_factor', default=None, type=float,
+                        help="Scale up outputs of model")
 
     args = parser.parse_args()
 
     theApp.camera_device = args.camera
+    theApp.scale_factor = args.scale_factor
 
     display = pyglet.window.get_platform().get_default_display()
     screens = display.get_screens()
