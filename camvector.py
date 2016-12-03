@@ -26,26 +26,38 @@ import time
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
 
+#number of predefined attribute vectors, initial one
 num_vectors   = 3
 cur_vector    = 0
 do_clear = True
 
+# global app of messy state
 theApp = None
+
+# the actual attribute vectors for VAE and GAN
 vector_offsets = None
 vector_offsets2 = None
+
+# default window sizes
 window_height = 800
 window_width = 1280
+
+# actual pyglet windows
 window1 = None
 window2 = None
+
+# camera settings
 # cam_width = 720
 # cam_height = 512
 cam_width = 400
 cam_height = 300
 
+# constants - arrow up/down mode
 ARROW_MODE_VECTOR_SOURCE = 1
 ARROW_MODE_VECTOR_DEST = 2
 ARROW_MODE_IMAGE_SOURCE = 3
 
+# images for pre-defined vectors
 vector_files = [
     "images/OneShot.png",
     "images/Happy.png",
@@ -53,6 +65,7 @@ vector_files = [
     "images/Sunglasses.png",
 ]
 
+# small images for pre-defined vectors
 small_vector_files = [
     "images/OneShotSmall.png",
     "images/HappySmall.png",
@@ -60,6 +73,7 @@ small_vector_files = [
     "images/SunglassesSmall.png",
 ]
 
+# starter images
 canned_faces = [
     "images/startup_face.jpg",
     "images/bengio.jpg",
@@ -69,6 +83,7 @@ canned_faces = [
     "images/yann.png",
 ]
 
+# initialize and return camera handle
 def setup_camera(device_number):
     cam = cv2.VideoCapture(device_number)
     result1 = cam.set(cv2.CAP_PROP_FRAME_WIDTH,cam_width)
@@ -76,11 +91,13 @@ def setup_camera(device_number):
     result3 = cam.set(cv2.CAP_PROP_FPS,1)
     return cam
 
+# given a camera handle, return image in RGB format
 def get_camera_image(camera):
     retval, img = camera.read()
     img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
     return img
 
+# convert an RGB image to a pyglet texture for display
 def image_to_texture(img):
     sy,sx,number_of_channels = img.shape
     number_of_bytes = sy*sx*number_of_channels
@@ -91,10 +108,12 @@ def image_to_texture(img):
            image_texture,pitch=sx*number_of_channels)
     return pImg
 
+# return aligned image
 def get_aligned(img):
     success, im_resize, rect = doalign.align_face_buffer(img, 256, max_extension_amount=0)
     return im_resize
 
+# encode image into latent space of model
 def encode_from_image(rawim, dmodel, scale_factor=None):
     if scale_factor is not None:
         rawim = imresize(rawim, 1.0 / scale_factor)
@@ -103,15 +122,18 @@ def encode_from_image(rawim, dmodel, scale_factor=None):
     encoded = dmodel.encode_images(entry)[0]
     return encoded
 
+# value mapping utility
 def pr_map(value, istart, istop, ostart, ostop):
     return ostart + (ostop - ostart) * ((value - istart) / float(istop - istart));
 
+# helper functions to handle arrow key presses in various modes
 def canned_face_up(cur_index):
     return (cur_index + 1) % len(canned_faces)
 
 def canned_face_down(cur_index):
     return (cur_index - 1 + len(canned_faces)) % len(canned_faces)
 
+# big nasty switch statement of keypress
 def do_key_press(symbol, modifiers):
     global cur_vector
     print("SO: {}".format(symbol))
@@ -126,7 +148,6 @@ def do_key_press(symbol, modifiers):
         theApp.arrow_mode = ARROW_MODE_VECTOR_DEST
     elif(symbol == key.G):
         theApp.gan_mode = not theApp.gan_mode
-        theApp.last_encoded_vector = None
         theApp.last_recon_face = None
         theApp.reset_aligned_face()
         print("GAN mode is now {}".format(theApp.gan_mode))
@@ -161,7 +182,7 @@ def do_key_press(symbol, modifiers):
         do_clear = True
     elif(symbol == key.SPACE):
         print("SPACEBAR")
-        theApp.write_last_aligned();
+        snapshot();
     elif(symbol == key.ESCAPE):
         print("ESCAPE")
         cv2.destroyAllWindows()
@@ -197,11 +218,13 @@ with open("enhance.sh", "w+") as text_file:
     text_file.write(command)
 # p=subprocess.Popen(command, shell=True)
 
+# global images that get displayed on win2
 win2_aligned_im = None
 win2_smile_im = None
 win2_surprised_im = None
 win2_angry_im = None
 
+# watcher to load win2 images on filesystem change
 class InputFileHandler(FileSystemEventHandler):
     def process(self, infile):
         global win2_aligned_im, win2_smile_im, win2_surprised_im, win2_angry_im
@@ -230,9 +253,7 @@ observer.schedule(event_handler, path=atstrip2_dir, recursive=False)
 observer.start()
 
 class MainApp():
-    last_aligned_face = None
     last_recon_face = None
-    last_encoded_vector = None
     one_shot_source_vector = None
     debug_outputs = False
     framecount = 0
@@ -314,9 +335,7 @@ class MainApp():
         self.last_saved_aligned_face_number = 0
         self.last_draw1_aligned_face_number = 0
 
-    def write_last_aligned(self, debugfile=False, datestr=None):
-        if self.last_aligned_face is None:
-            return
+    def write_cur_aligned(self, debugfile=False, datestr=None):
         if debugfile:
             datestr = "debug"
         elif datestr is None:
@@ -326,26 +345,29 @@ class MainApp():
             return
         imsave(filename, self.last_aligned_face)
 
-        if self.last_recon_face is None:
-            return
         filename = "{}/{}.png".format(recon_dir, datestr)    
         if not debugfile and os.path.exists(filename):
             return
-        imsave(filename, self.last_recon_face)
+        imsave(filename, self.canned_aligned[self.cur_canned_face])
 
-    def get_recon_strip(self, rawim, dmodel_cur, scale_factor):
+    def get_encoded(image_index):
+        if self.canned_encoded[image_index] is None:
+            self.canned_encoded[image_index] = encode_from_image(self.canned_aligned[image_index], dmodel_cur, scale_factor)
+        return self.canned_encoded[image_index]
+
+    def get_recon_strip(self, dmodel_cur, scale_factor):
         global vector_offsets, vector_offsets2, cur_vector
 
         if dmodel_cur is None or (not self.gan_mode and vector_offsets is None) or (self.gan_mode and vector_offsets2 is None):
             decode_list = []
             for i in range(5):
-                decode_list.append(rawim)
+                decode_list.append(self.canned_aligned[self.cur_canned_face])
             decoded = np.array(decode_list)
             decoded_array = np.concatenate(decoded, axis=1)
             return decoded_array
 
-        encoded = encode_from_image(rawim, dmodel_cur, scale_factor)
-        self.last_encoded_vector = encoded
+        encoded_source_image = get_encoded(self.cur_canned_face)
+
         decode_list = []
         if self.gan_mode:
             vector_index_start = 0
@@ -356,19 +378,14 @@ class MainApp():
             cur_vector_offsets = vector_offsets
             deblur_vector = vector_offsets[0]
         if self.one_shot_mode:
-            if self.one_shot_source_vector is not None:
-                # compute attribute vector
-                attribute_vector = encoded - self.one_shot_source_vector
-            else:
-                # smile is debug ?
-                attribute_vector = cur_vector_offsets[vector_index_start]
-            # override encoded to be one_shot_face
-            encoded = encode_from_image(self.canned_aligned[self.cur_vector_dest], dmodel_cur, scale_factor)
+            encoded_vector_source = get_encoded(self.cur_vector_source)
+            encoded_vector_dest = get_encoded(self.cur_vector_dest)
+            attribute_vector = encoded_vector_dest - encoded_vector_source
         else:
             attribute_vector = cur_vector_offsets[vector_index_start+cur_vector]
         for i in range(5):
             scale_factor = pr_map(i, 0, 5, -1.5, 1.5)
-            cur_anchor = encoded + scale_factor * attribute_vector
+            cur_anchor = encoded_source_image + scale_factor * attribute_vector
             if not self.gan_mode:
                 cur_anchor += deblur_vector
             decode_list.append(cur_anchor)
@@ -383,19 +400,18 @@ class MainApp():
         return decoded_array
 
     # get a triple of effects image. not for one-shot
-    def write_recon_triple(self, rawim, dmodel_cur, datestr, scale_factor):
+    def write_recon_triple(self, dmodel_cur, datestr, scale_factor):
         global vector_offsets, vector_offsets2
         global win2_aligned_im, win2_smile_im, win2_surprised_im, win2_angry_im
 
         if dmodel_cur is None or (not self.gan_mode and vector_offsets is None) or (self.gan_mode and vector_offsets2 is None):
-            win2_smile_im = rawim
-            win2_surprised_im = rawim
-            win2_angry_im = rawim
-            win2_aligned_im = rawim
+            win2_smile_im = self.canned_aligned[self.cur_canned_face]
+            win2_surprised_im = self.canned_aligned[self.cur_canned_face]
+            win2_angry_im = self.canned_aligned[self.cur_canned_face]
+            win2_aligned_im = self.canned_aligned[self.cur_canned_face]
             return None
 
-        encoded = encode_from_image(rawim, dmodel_cur, scale_factor)
-        self.last_encoded_vector = encoded
+        encoded_source_image = get_encoded(self.cur_canned_face)
         decode_list = []
         if self.gan_mode:
             vector_index_start = 0
@@ -407,11 +423,11 @@ class MainApp():
             deblur_vector = vector_offsets[0]
         for i in range(4):
             if i == 3:
-                cur_anchor = encoded
+                cur_anchor = encoded_source_image
             else:
                 scale_factor = 1.5
                 attribute_vector = cur_vector_offsets[vector_index_start+i]
-                cur_anchor = encoded + scale_factor * attribute_vector
+                cur_anchor = encoded_source_image + scale_factor * attribute_vector
                 if not self.gan_mode:
                     cur_anchor += deblur_vector
             decode_list.append(cur_anchor)
@@ -521,16 +537,16 @@ class MainApp():
             self.canned_textures[self.cur_canned_face].blit(window_width / 2 - 128, window_height - 256)
 
             if self.gan_mode and self.dmodel2 is not None:
-                recon = self.get_recon_strip(self.last_aligned_face, self.dmodel2, 2)
+                recon = self.get_recon_strip(self.dmodel2, 2)
             else:
-                recon = self.get_recon_strip(self.last_aligned_face, self.dmodel, self.scale_factor)
+                recon = self.get_recon_strip(self.dmodel, self.scale_factor)
             if recon is not None:
                 self.last_recon_face = recon
                 recon_tex = image_to_texture(recon)
                 recon_tex.blit(0, 0)
 
-        if self.debug_outputs:
-            self.write_last_aligned(debugfile=True)
+        # if self.debug_outputs:
+        #     self.write_last_aligned(debugfile=True)
 
         self.framecount += pyglet.clock.get_fps()
         self.timecount  += dt
@@ -580,25 +596,15 @@ def draw2(dt):
 
 # snapshot the current state and write a file to the processing queue
 def snapshot(dt):
-    if theApp.last_aligned_face is None:
-        print("skipping snapshot - no aligned face")
-        return
-
-    if theApp.last_saved_aligned_face_number == theApp.cur_aligned_face_number:
-        print("skipping snapshot - no new face")
-        return
-
-    theApp.last_saved_aligned_face_number = theApp.cur_aligned_face_number
-
     print("SNAPSHOT: saving")
 
     datestr = get_date_str()
-    theApp.write_last_aligned(datestr=datestr)
+    theApp.write_cur_aligned(datestr=datestr)
     if not theApp.one_shot_mode:
         if theApp.gan_mode and theApp.dmodel2 is not None:
-            theApp.write_recon_triple(theApp.last_aligned_face, theApp.dmodel2, datestr, 2)
+            theApp.write_recon_triple(theApp.dmodel2, datestr, 2)
         else:
-            theApp.write_recon_triple(theApp.last_aligned_face, theApp.dmodel, datestr, theApp.scale_factor)
+            theApp.write_recon_triple(theApp.dmodel, datestr, theApp.scale_factor)
 
 theApp = MainApp()
 
@@ -721,6 +727,6 @@ if __name__ == "__main__":
         theApp.setDebugOutputs(args.debug_outputs)
 
     pyglet.clock.schedule_interval(draw1, 1/60.0)
-    pyglet.clock.schedule_interval(snapshot, 5)
+    pyglet.clock.schedule_interval(snapshot, 15)
     pyglet.clock.schedule_interval(draw2, 1)
     pyglet.app.run()
