@@ -362,6 +362,7 @@ class MainApp():
     def get_encoded(self, dmodel_cur, image_index, scale_factor):
         if self.canned_encoded[image_index] is None:
             self.canned_encoded[image_index] = encode_from_image(self.canned_aligned[image_index], dmodel_cur, scale_factor)
+            print("Initialized {} im {} to {}".format(image_index, self.canned_aligned[image_index][0:0,0:3,0:3], self.canned_encoded[image_index][:5]))
         return self.canned_encoded[image_index]
 
     def get_recon_strip(self, dmodel_cur, scale_factor):
@@ -393,8 +394,8 @@ class MainApp():
         else:
             attribute_vector = cur_vector_offsets[vector_index_start+cur_vector]
         for i in range(5):
-            scale_factor = pr_map(i, 0, 5, -1.5, 1.5)
-            cur_anchor = encoded_source_image + scale_factor * attribute_vector
+            vector_scalar = pr_map(i, 0, 5, -1.5, 1.5)
+            cur_anchor = encoded_source_image + vector_scalar * attribute_vector
             if not self.gan_mode:
                 cur_anchor += deblur_vector
             decode_list.append(cur_anchor)
@@ -434,9 +435,9 @@ class MainApp():
             if i == 3:
                 cur_anchor = encoded_source_image
             else:
-                scale_factor = 1.5
+                vector_scalar = 1.5
                 attribute_vector = cur_vector_offsets[vector_index_start+i]
-                cur_anchor = encoded_source_image + scale_factor * attribute_vector
+                cur_anchor = encoded_source_image + vector_scalar * attribute_vector
                 if not self.gan_mode:
                     cur_anchor += deblur_vector
             decode_list.append(cur_anchor)
@@ -446,7 +447,7 @@ class MainApp():
         decoded_array = (255 * np.dstack(decoded_strip)).astype(np.uint8)
 
         if scale_factor is not None:
-            decoded_array = imresize(decoded_array, self.scale_factor)
+            decoded_array = imresize(decoded_array, scale_factor)
         elif self.gan_mode:
             decoded_array = imresize(decoded_array, 2.0)
 
@@ -456,7 +457,7 @@ class MainApp():
         win2_aligned_im = decoded_array[0:256,768:1024,0:3]
 
         if not self.gan_mode:
-            filename = "{}/{}.png".format(atstrip1_dir, datestr)
+            filename = "{}/{}_attrib.png".format(atstrip1_dir, datestr)
             if os.path.exists(filename):
                 return
             imsave(filename, decoded_array)
@@ -464,64 +465,63 @@ class MainApp():
     # get a triple of effects image. not for one-shot
     def write_oneshot_sixpack(self, dmodel_cur, datestr, scale_factor):
         global win2_oneshot_a1, win2_oneshot_a2, win2_oneshot_b1, win2_oneshot_b2, win2_oneshot_c1, win2_oneshot_c2
+        global vector_offsets
 
-        win2_oneshot_a1 = self.canned_aligned[1]
-        win2_oneshot_a2 = self.canned_aligned[1]
-        win2_oneshot_b1 = self.canned_aligned[2]
-        win2_oneshot_b2 = self.canned_aligned[2]
-        win2_oneshot_c1 = self.canned_aligned[3]
-        win2_oneshot_c2 = self.canned_aligned[3]
-        return None
+        index_a = self.cur_canned_face
+        index_b = canned_face_up(index_a)
+        index_c = canned_face_up(index_b)
+        canned_indexes = [index_a, index_b, index_c]
+        print("Canned indexes {}".format(canned_indexes))
+        if dmodel_cur is None or (not self.gan_mode and vector_offsets is None) or (self.gan_mode and vector_offsets2 is None):
+            win2_oneshot_a1 = self.canned_aligned[index_a]
+            win2_oneshot_a2 = self.canned_aligned[index_a]
+            win2_oneshot_b1 = self.canned_aligned[index_b]
+            win2_oneshot_b2 = self.canned_aligned[index_b]
+            win2_oneshot_c1 = self.canned_aligned[index_c]
+            win2_oneshot_c2 = self.canned_aligned[index_c]
+            return None
 
-        # if dmodel_cur is None or (not self.gan_mode and vector_offsets is None) or (self.gan_mode and vector_offsets2 is None):
-        #     win2_oneshot_a1 = self.canned_aligned[1]
-        #     win2_oneshot_a2 = self.canned_aligned[1]
-        #     win2_oneshot_b1 = self.canned_aligned[2]
-        #     win2_oneshot_b2 = self.canned_aligned[2]
-        #     win2_oneshot_c1 = self.canned_aligned[3]
-        #     win2_oneshot_c2 = self.canned_aligned[3]
-        #     return None
+        encoded_vector_source = self.get_encoded(dmodel_cur, self.cur_vector_source, scale_factor)
+        encoded_vector_dest = self.get_encoded(dmodel_cur, self.cur_vector_dest, scale_factor)
+        attribute_vector = encoded_vector_dest - encoded_vector_source
 
-        # encoded_source_image = self.get_encoded(dmodel_cur, self.cur_canned_face, scale_factor)
-        # decode_list = []
-        # if self.gan_mode:
-        #     vector_index_start = 0
-        #     cur_vector_offsets = vector_offsets2
-        #     deblur_vector = None
-        # else:
-        #     vector_index_start = 1
-        #     cur_vector_offsets = vector_offsets
-        #     deblur_vector = vector_offsets[0]
-        # for i in range(4):
-        #     if i == 3:
-        #         cur_anchor = encoded_source_image
-        #     else:
-        #         scale_factor = 1.5
-        #         attribute_vector = cur_vector_offsets[vector_index_start+i]
-        #         cur_anchor = encoded_source_image + scale_factor * attribute_vector
-        #         if not self.gan_mode:
-        #             cur_anchor += deblur_vector
-        #     decode_list.append(cur_anchor)
-        # decoded = dmodel_cur.sample_at(np.array(decode_list))
-        # n, c, y, x = decoded.shape
-        # decoded_strip = np.concatenate(decoded, axis=2)
-        # decoded_array = (255 * np.dstack(decoded_strip)).astype(np.uint8)
+        deblur_vector = vector_offsets[0]
 
-        # if scale_factor is not None:
-        #     decoded_array = imresize(decoded_array, self.scale_factor)
-        # elif self.gan_mode:
-        #     decoded_array = imresize(decoded_array, 2.0)
+        decode_list = []
+        for i in range(0,3):
+            encoded_source_image = self.get_encoded(dmodel_cur, canned_indexes[i], scale_factor)
+            cur_anchor = encoded_source_image
+            # if not self.gan_mode:
+            #     cur_anchor += deblur_vector
+            decode_list.append(cur_anchor)
+            vector_scalar = 1.5
+            cur_anchor = encoded_source_image + vector_scalar * attribute_vector
+            # if not self.gan_mode:
+            #     cur_anchor += deblur_vector
+            decode_list.append(cur_anchor)
 
-        # win2_smile_im = decoded_array[0:256,0:256,0:3]
-        # win2_surprised_im = decoded_array[0:256,256:512,0:3]
-        # win2_angry_im = decoded_array[0:256,512:768,0:3]
-        # win2_aligned_im = decoded_array[0:256,768:1024,0:3]
+        decoded = dmodel_cur.sample_at(np.array(decode_list))
+        n, c, y, x = decoded.shape
+        decoded_strip = np.concatenate(decoded, axis=2)
+        decoded_array = (255 * np.dstack(decoded_strip)).astype(np.uint8)
 
-        # if not self.gan_mode:
-        #     filename = "{}/{}.png".format(atstrip1_dir, datestr)
-        #     if os.path.exists(filename):
-        #         return
-        #     imsave(filename, decoded_array)
+        if scale_factor is not None:
+            decoded_array = imresize(decoded_array, scale_factor)
+        elif self.gan_mode:
+            decoded_array = imresize(decoded_array, 2.0)
+
+        win2_oneshot_a1 = decoded_array[0:256,0:256,0:3]
+        win2_oneshot_a2 = decoded_array[0:256,256:512,0:3]
+        win2_oneshot_b1 = decoded_array[0:256,512:768,0:3]
+        win2_oneshot_b2 = decoded_array[0:256,768:1024,0:3]
+        win2_oneshot_c1 = decoded_array[0:256,1024:1280,0:3]
+        win2_oneshot_c2 = decoded_array[0:256,1280:1536,0:3]
+
+        if not self.gan_mode:
+            filename = "{}/{}_oneshot.png".format(atstrip1_dir, datestr)
+            if os.path.exists(filename):
+                return
+            imsave(filename, decoded_array)
 
     def get_small_texture(self, image_index, super_small=False):
         if super_small:
@@ -836,7 +836,8 @@ if __name__ == "__main__":
     if args.debug_outputs:
         theApp.setDebugOutputs(args.debug_outputs)
 
-    pyglet.clock.schedule_interval(draw1, 1/60.0)
+    snapshot(None)
+    pyglet.clock.schedule_interval(draw1, 1)
     pyglet.clock.schedule_interval(snapshot, 15)
     pyglet.clock.schedule_interval(draw2, 1)
     pyglet.app.run()
