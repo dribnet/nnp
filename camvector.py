@@ -29,7 +29,6 @@ from watchdog.events import FileSystemEventHandler
 #number of predefined attribute vectors, initial one
 num_vectors   = 3
 cur_vector    = 0
-do_clear = True
 
 # global app of messy state
 theApp = None
@@ -56,6 +55,10 @@ cam_height = 300
 ARROW_MODE_VECTOR_SOURCE = 1
 ARROW_MODE_VECTOR_DEST = 2
 ARROW_MODE_IMAGE_SOURCE = 3
+
+APP_MODE_ATTRIBUTE = 1
+APP_MODE_ONESHOT = 2
+APP_MODE_CLASSIFY = 3
 
 # images for pre-defined vectors
 vector_files = [
@@ -149,7 +152,6 @@ def do_key_press(symbol, modifiers):
     elif(symbol == key.G):
         theApp.gan_mode = not theApp.gan_mode
         theApp.last_recon_face = None
-        theApp.reset_aligned_face()
         print("GAN mode is now {}".format(theApp.gan_mode))
     elif(symbol == key.DOWN):
         if theApp.arrow_mode == ARROW_MODE_IMAGE_SOURCE:
@@ -171,16 +173,17 @@ def do_key_press(symbol, modifiers):
         cur_vector = (cur_vector + 1) % num_vectors
     elif(symbol == key.Z):
         # three vectors mode
-        theApp.one_shot_mode = False
+        theApp.app_mode = APP_MODE_ATTRIBUTE
         theApp.arrow_mode = ARROW_MODE_IMAGE_SOURCE
-        do_clear = True
     elif(symbol == key.X):
         # one_shot mode
-        theApp.one_shot_mode = True
+        theApp.app_mode = APP_MODE_ONESHOT
         theApp.cur_vector_source = theApp.cur_canned_face
         theApp.cur_vector_dest = theApp.cur_canned_face
         snapshot(None)
-        do_clear = True
+    elif(symbol == key.C):
+        # one_shot mode
+        theApp.app_mode = APP_MODE_CLASSIFY
     elif(symbol == key.SPACE):
         print("SPACEBAR")
         snapshot(None);
@@ -271,17 +274,15 @@ class MainApp():
     model_name2 = None
     dmodel = None
     dmodel2 = None
-    one_shot_mode = False
+    app_mode = APP_MODE_ATTRIBUTE
     gan_mode = False
     cur_canned_face = 0
     cur_vector_source = 0
     cur_vector_dest  = 0
-    cur_aligned_face_number = 0
-    last_saved_aligned_face_number = 0
-    last_draw1_aligned_face_number = 0
     scale_factor = None
     arrow_mode = ARROW_MODE_IMAGE_SOURCE
     camera_recording = False
+    num_steps = 0
 
     """Just a container for unfortunate global state"""
     def __init__(self):
@@ -340,10 +341,6 @@ class MainApp():
     def setDebugOutputs(self, mode):
         self.debug_outputs = mode
 
-    def reset_aligned_face(self):
-        self.last_saved_aligned_face_number = 0
-        self.last_draw1_aligned_face_number = 0
-
     def write_cur_aligned(self, debugfile=False, datestr=None):
         if debugfile:
             datestr = "debug"
@@ -362,7 +359,6 @@ class MainApp():
     def get_encoded(self, dmodel_cur, image_index, scale_factor):
         if self.canned_encoded[image_index] is None:
             self.canned_encoded[image_index] = encode_from_image(self.canned_aligned[image_index], dmodel_cur, scale_factor)
-            print("Initialized {} im {} to {}".format(image_index, self.canned_aligned[image_index][0:0,0:3,0:3], self.canned_encoded[image_index][:5]))
         return self.canned_encoded[image_index]
 
     def get_recon_strip(self, dmodel_cur, scale_factor):
@@ -387,12 +383,13 @@ class MainApp():
             vector_index_start = 1
             cur_vector_offsets = vector_offsets
             deblur_vector = vector_offsets[0]
-        if self.one_shot_mode:
+        if self.app_mode == APP_MODE_ATTRIBUTE:
+            attribute_vector = cur_vector_offsets[vector_index_start+cur_vector]
+        else:
             encoded_vector_source = self.get_encoded(dmodel_cur, self.cur_vector_source, scale_factor)
             encoded_vector_dest = self.get_encoded(dmodel_cur, self.cur_vector_dest, scale_factor)
             attribute_vector = encoded_vector_dest - encoded_vector_source
-        else:
-            attribute_vector = cur_vector_offsets[vector_index_start+cur_vector]
+
         for i in range(5):
             vector_scalar = pr_map(i, 0, 5, -1.5, 1.5)
             cur_anchor = encoded_source_image + vector_scalar * attribute_vector
@@ -535,14 +532,7 @@ class MainApp():
                 self.canned_small_textures[image_index] = image_to_texture(small_source)
             return self.canned_small_textures[image_index]
 
-    def draw1(self, dt):
-        global window1, cur_vector, do_clear
-
-        # clear window only sometimes
-        if do_clear or True:
-            window1.clear()
-            do_clear = False
-
+    def step(self, dt):
         if self.cur_frame == 5:
             print("Fake key presses")
             # do_key_press(key.LEFT, None)
@@ -555,13 +545,11 @@ class MainApp():
         if self.dmodel is None and self.model_name and self.cur_frame > 20:
             print("Initializing model {}".format(self.model_name))
             self.dmodel = DiscGenModel(filename=self.model_name)
-            theApp.reset_aligned_face()
 
         if self.dmodel2 is None and self.model_name2 and self.cur_frame > 30:
             print("Initializing model {}".format(self.model_name2))
             self.dmodel2 = AliModel(filename=self.model_name2)
             print("Dmodel2 is {}".format(self.dmodel2))
-            theApp.reset_aligned_face()
 
         if self.cur_frame == 35:
             print("Fake key presses")
@@ -584,38 +572,42 @@ class MainApp():
                 theApp.canned_small_textures[face_index] = None
                 theApp.canned_smaller_textures[face_index] = None
 
+    def draw1(self, dt):
+        global window1, cur_vector
+
+        # clear window only sometimes
+        window1.clear()
+
         align_im = theApp.canned_aligned[theApp.cur_canned_face]
 
-        if self.one_shot_mode:
-            vector_index = 0
-        else:
+        if self.app_mode == APP_MODE_ATTRIBUTE:
             vector_index = cur_vector + 1
+        else:
+            vector_index = 0
         self.vector_textures[vector_index].blit(self.vector_x, self.vector_y)
 
-        if True:
-            theApp.last_draw1_aligned_face_number = theApp.cur_aligned_face_number
-            if self.one_shot_mode:
-                source_tex = self.get_small_texture(self.cur_vector_source)
-                source_x, source_y = self.vector_x + 176, self.vector_y + 11
-                source_tex.blit(source_x, source_y)
+        if self.app_mode == APP_MODE_ONESHOT:
+            source_tex = self.get_small_texture(self.cur_vector_source)
+            source_x, source_y = self.vector_x + 176, self.vector_y + 11
+            source_tex.blit(source_x, source_y)
 
-                dest_tex = self.get_small_texture(self.cur_vector_dest)
-                source_x, source_y = self.vector_x + 688, self.vector_y + 11
-                dest_tex.blit(source_x, source_y)
+            dest_tex = self.get_small_texture(self.cur_vector_dest)
+            source_x, source_y = self.vector_x + 688, self.vector_y + 11
+            dest_tex.blit(source_x, source_y)
 
-            if self.canned_textures[self.cur_canned_face] is None:
-                self.canned_textures[self.cur_canned_face] = image_to_texture(self.canned_aligned[self.cur_canned_face])
+        if self.canned_textures[self.cur_canned_face] is None:
+            self.canned_textures[self.cur_canned_face] = image_to_texture(self.canned_aligned[self.cur_canned_face])
 
-            self.canned_textures[self.cur_canned_face].blit(window_width / 2 - 128, window_height - 256)
+        self.canned_textures[self.cur_canned_face].blit(window_width / 2 - 128, window_height - 256)
 
-            if self.gan_mode and self.dmodel2 is not None:
-                recon = self.get_recon_strip(self.dmodel2, 2)
-            else:
-                recon = self.get_recon_strip(self.dmodel, self.scale_factor)
-            if recon is not None:
-                self.last_recon_face = recon
-                recon_tex = image_to_texture(recon)
-                recon_tex.blit(0, 0)
+        if self.gan_mode and self.dmodel2 is not None:
+            recon = self.get_recon_strip(self.dmodel2, 2)
+        else:
+            recon = self.get_recon_strip(self.dmodel, self.scale_factor)
+        if recon is not None:
+            self.last_recon_face = recon
+            recon_tex = image_to_texture(recon)
+            recon_tex.blit(0, 0)
 
         # if self.debug_outputs:
         #     self.write_last_aligned(debugfile=True)
@@ -636,7 +628,7 @@ class MainApp():
         window2.clear()
         global win2_aligned_im, win2_smile_im, win2_surprised_im, win2_angry_im
         global win2_oneshot_a1, win2_oneshot_a2, win2_oneshot_b1, win2_oneshot_b2, win2_oneshot_c1, win2_oneshot_c2
-        if self.one_shot_mode:
+        if self.app_mode == APP_MODE_ONESHOT:
             if win2_oneshot_a1 is not None:
                 oneshot_tex = image_to_texture(win2_oneshot_a1)
                 oneshot_tex.blit(0, window_height-256)
@@ -683,6 +675,18 @@ class MainApp():
                 win2_angry_tex = image_to_texture(win2_angry_im)
                 win2_angry_tex.blit(window_width-256, 0)
 
+def step(dt):
+    theApp.step(dt)
+    if window1 != None:
+        window1.switch_to()
+        theApp.draw1(dt)
+    if window2 != None:
+        window2.switch_to()
+        theApp.draw2(dt)
+    if theApp.num_steps % 15 == 0:
+        snapshot(dt)
+    theApp.num_steps += 1
+
 # Draw Loop
 def draw1(dt):
     global window1
@@ -704,12 +708,12 @@ def snapshot(dt):
 
     datestr = get_date_str()
     theApp.write_cur_aligned(datestr=datestr)
-    if not theApp.one_shot_mode:
+    if theApp.app_mode == APP_MODE_ATTRIBUTE:
         if theApp.gan_mode and theApp.dmodel2 is not None:
             theApp.write_recon_triple(theApp.dmodel2, datestr, 2)
         else:
             theApp.write_recon_triple(theApp.dmodel, datestr, theApp.scale_factor)
-    else:
+    elif theApp.app_mode == APP_MODE_ONESHOT:
         if theApp.gan_mode and theApp.dmodel2 is not None:
             theApp.write_oneshot_sixpack(theApp.dmodel2, datestr, 2)
         else:
@@ -837,7 +841,8 @@ if __name__ == "__main__":
         theApp.setDebugOutputs(args.debug_outputs)
 
     snapshot(None)
-    pyglet.clock.schedule_interval(draw1, 1)
-    pyglet.clock.schedule_interval(snapshot, 15)
-    pyglet.clock.schedule_interval(draw2, 1)
+    pyglet.clock.schedule_interval(step, 1)
+    # pyglet.clock.schedule_interval(draw1, 1)
+    # pyglet.clock.schedule_interval(draw2, 1)
+    # pyglet.clock.schedule_interval(snapshot, 15)
     pyglet.app.run()
