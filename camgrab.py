@@ -1,15 +1,17 @@
 import cv2
 
 #capture from camera at location 0
-cap = cv2.VideoCapture(0)
-# result1 = cap.set(cv2.CAP_PROP_FRAME_WIDTH,1280)
-# result2 = cap.set(cv2.CAP_PROP_FRAME_HEIGHT,1024)
-result1 = cap.set(cv2.CAP_PROP_FRAME_WIDTH,720)
-result2 = cap.set(cv2.CAP_PROP_FRAME_HEIGHT,512)
-print("Result is {}, {}".format(result1, result2))
+cam= cv2.VideoCapture(0)
+
+cam_width = 400
+cam_height = 300
+result1 = cam.set(cv2.CAP_PROP_FRAME_WIDTH,cam_width)
+result2 = cam.set(cv2.CAP_PROP_FRAME_HEIGHT,cam_height)
+result3 = cam.set(cv2.CAP_PROP_FPS,1)
+print("Result is {}, {}, {}".format(result1, result2, result3))
 
 while True:
-    ret, img = cap.read()
+    ret, img = cam.read()
     cv2.imshow("input", img)
 
     key = cv2.waitKey(10)
