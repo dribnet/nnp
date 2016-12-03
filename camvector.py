@@ -57,11 +57,12 @@ small_vector_files = [
 ]
 
 canned_faces = [
+    "images/startup_face.jpg",
     "images/bengio.jpg",
     "images/demis.jpg",
     "images/fei_fei.jpg",
     "images/geoffrey.jpg",
-    "images/yann.jpg",
+    "images/yann.png",
 ]
 
 def setup_camera(device_number):
@@ -108,35 +109,34 @@ def do_key_press(symbol, modifiers):
         if theApp.one_shot_mode:
             theApp.one_shot_source = theApp.last_aligned_face
             theApp.one_shot_source_vector = theApp.last_encoded_vector
-    if(symbol == key.G):
+    elif(symbol == key.G):
         theApp.gan_mode = not theApp.gan_mode
         theApp.last_encoded_vector = None
         theApp.last_recon_face = None
         theApp.reset_aligned_face()
         print("GAN mode is now {}".format(theApp.gan_mode))
-    if(symbol == key.DOWN):
-        if theApp.one_shot_mode:
-            theApp.cur_canned_face = (theApp.cur_canned_face - 1 + len(canned_faces)) % len(canned_faces)
-            theApp.one_shot_face = theApp.canned_aligned_faces[theApp.cur_canned_face]
-        else:
-            cur_vector = (cur_vector - 1 + num_vectors) % num_vectors
-    if(symbol == key.UP):
-        if theApp.one_shot_mode:
-            theApp.cur_canned_face = (theApp.cur_canned_face + 1) % len(canned_faces)
-            theApp.one_shot_face = theApp.canned_aligned_faces[theApp.cur_canned_face]
-        else:
-            cur_vector = (cur_vector + 1) % num_vectors
-    elif(symbol == key.LEFT or symbol == key.RIGHT):
-        if theApp.one_shot_mode:
-            theApp.one_shot_mode = False
-            do_clear = True
-        else:
-            theApp.one_shot_mode = True
-            theApp.one_shot_face = theApp.last_aligned_face
-            theApp.one_shot_source = theApp.last_aligned_face
-            theApp.one_shot_source_vector = theApp.last_encoded_vector
-            theApp.cur_canned_face = -1
-            do_clear = True
+    elif(symbol == key.DOWN):
+        theApp.cur_canned_face = (theApp.cur_canned_face - 1 + len(canned_faces)) % len(canned_faces)
+        theApp.one_shot_face = theApp.canned_aligned_faces[theApp.cur_canned_face]
+    elif(symbol == key.UP):
+        theApp.cur_canned_face = (theApp.cur_canned_face + 1) % len(canned_faces)
+        theApp.one_shot_face = theApp.canned_aligned_faces[theApp.cur_canned_face]
+    elif(symbol == key.LEFT):
+        cur_vector = (cur_vector - 1 + num_vectors) % num_vectors
+    elif(symbol == key.RIGHT):
+        cur_vector = (cur_vector + 1) % num_vectors
+    elif(symbol == key.Z):
+        # three vectors mode
+        theApp.one_shot_mode = False
+        do_clear = True
+    elif(symbol == key.X):
+        # one_shot mode
+        theApp.one_shot_mode = True
+        theApp.one_shot_face = theApp.last_aligned_face
+        theApp.one_shot_source = theApp.last_aligned_face
+        theApp.one_shot_source_vector = theApp.last_encoded_vector
+        theApp.cur_canned_face = -1
+        do_clear = True
     elif(symbol == key.SPACE):
         print("SPACEBAR")
         theApp.write_last_aligned();
@@ -214,7 +214,6 @@ class MainApp():
     one_shot_face = None
     one_shot_source = None
     one_shot_source_vector = None
-    input_image = None
     debug_outputs = False
     framecount = 0
     timecount  = 0
@@ -271,7 +270,7 @@ class MainApp():
                 self.small_vector_y1 = int((256 - h) / 2)
                 self.small_vector_y3 = int(window_height-(256/2) - h/2)
             self.small_vector_textures.append(image_to_texture(vector_im))
-        self.cur_canned_face = -1
+        self.cur_canned_face = 0
         self.canned_aligned_faces = []
         for i in range(len(canned_faces)):
             canned_face = imread(canned_faces[i])
@@ -441,10 +440,10 @@ class MainApp():
             # do_key_press(key.LEFT, None)
 
         # get source image
-        if self.camera:
+        if self.camera is not None and theApp.cur_canned_face == 0:
             img = get_camera_image(self.camera)
         else:
-            img = self.input_image
+            img = theApp.canned_aligned_faces[theApp.cur_canned_face]
 
         align_im = get_aligned(img)
         if align_im is not None:
@@ -460,13 +459,15 @@ class MainApp():
         if self.last_aligned_face is not None and theApp.cur_aligned_face_number != theApp.last_draw1_aligned_face_number:
             theApp.last_draw1_aligned_face_number = theApp.cur_aligned_face_number
             if self.one_shot_mode:
-                aligned_small = imresize(self.last_aligned_face, (180, 180))
+                aligned_small = imresize(self.last_aligned_face, (164, 164))
                 align_tex = image_to_texture(aligned_small)
+                source_x, source_y = self.vector_x + 688, self.vector_y + 11
                 # align_tex.blit(3 * window_width / 4 - 128, int((window_height - 256) / 2))
-                align_tex.blit(3 * window_width / 4 - 128 - 32, int((window_height - 180) / 2))
-                small_source = imresize(self.one_shot_source, (180, 180))
+                align_tex.blit(source_x, source_y)
+                small_source = imresize(self.one_shot_source, (164, 164))
                 one_shot_source_tex = image_to_texture(small_source)
-                one_shot_source_tex.blit(window_width / 4 - 128 + 96, int((window_height - 180) / 2))
+                source_x, source_y = self.vector_x + 176, self.vector_y + 11
+                one_shot_source_tex.blit(source_x, source_y)
                 one_shot_face_tex = image_to_texture(self.one_shot_face)
                 one_shot_face_tex.blit(window_width / 2 - 128, window_height - 256)
             else:
@@ -571,8 +572,6 @@ if __name__ == "__main__":
                         help="indexes to offsets in anchor-offset")    
     parser.add_argument('--anchor-index2', dest='anchor_index2', default="0,1,2,3",
                         help="indexes to offsets in anchor-offset2")    
-    parser.add_argument('--input-image', dest='input_image', default="images/startup_face.jpg",
-                        help="use this input image instead of camera")
     parser.add_argument('--no-camera', dest='no_camera', default=False, action='store_true',
                         help="disable camera")
     parser.add_argument('--skip1', dest='skip1', default=False, action='store_true',
@@ -631,9 +630,6 @@ if __name__ == "__main__":
         @window2.event
         def on_key_press(symbol, modifiers):
             do_key_press(symbol, modifiers)
-
-    input_image = cv2.imread(args.input_image, cv2.IMREAD_COLOR)
-    theApp.input_image = cv2.cvtColor(input_image, cv2.COLOR_BGR2RGB)
 
     theApp.use_camera = not args.no_camera
     theApp.model_name = args.model
