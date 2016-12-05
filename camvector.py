@@ -166,10 +166,12 @@ def do_key_press(symbol, modifiers):
         if theApp.camera_recording:
             if theApp.arrow_mode == ARROW_MODE_IMAGE_SOURCE:
                 theApp.cur_canned_face = CANNED_IMAGE_CAMERA_IMAGE_SOURCE
-            elif theApp.arrow_mode == ARROW_MODE_VECTOR_SOURCE:
+            elif (theApp.arrow_mode == ARROW_MODE_VECTOR_SOURCE or 
+                  theApp.arrow_mode == ARROW_MODE_VECTOR_DEST):
+                theApp.arrow_mode = ARROW_MODE_VECTOR_DEST
                 theApp.cur_vector_source = CANNED_IMAGE_CAMERA_VECTOR_SOURCE
-            elif theApp.arrow_mode == ARROW_MODE_VECTOR_DEST:
                 theApp.cur_vector_dest = CANNED_IMAGE_CAMERA_VECTOR_DEST
+                theApp.setup_oneshot_camera = True
     elif(symbol == key.A):
         theApp.arrow_mode = ARROW_MODE_IMAGE_SOURCE
     elif(symbol == key.S):
@@ -240,11 +242,13 @@ recon_dir = "{}/recon".format(pipeline_dir)
 atstrip1_dir = "{}/atstrip1".format(pipeline_dir)
 atstrip2_dir = "{}/atstrip2".format(pipeline_dir)
 roc_dir = "{}/roc".format(pipeline_dir)
+scrot_dir = "{}/scrot".format(pipeline_dir)
 os.makedirs(aligned_dir)
 os.makedirs(recon_dir)
 os.makedirs(atstrip1_dir)
 os.makedirs(atstrip2_dir)
 os.makedirs(roc_dir)
+os.makedirs(scrot_dir)
 command = "CUDA_VISIBLE_DEVICES=1 \
 /usr/local/anaconda2/envs/enhance/bin/python \
     ../neural-enhance3/enhance.py --model dlib_256_neupup1 --zoom 1 \
@@ -335,6 +339,7 @@ class MainApp():
     num_steps = 0
     redraw_needed = True
     last_recon_tex = None
+    setup_oneshot_camera = False
 
     """Just a container for unfortunate global state"""
     def __init__(self):
@@ -375,7 +380,7 @@ class MainApp():
                 self.small_vector_y1 = int((256 - h) / 2)
                 self.small_vector_y3 = int(window_height-(256/2) - h/2)
             self.small_vector_textures.append(image_to_texture(vector_im))
-        self.cur_canned_face = 0
+        self.cur_canned_face = CANNED_IMAGE_INITIAL_CANNED_FACE
         self.canned_aligned = []
         self.canned_encoded = []
         self.canned_textures = []
@@ -392,6 +397,14 @@ class MainApp():
 
     def setDebugOutputs(self, mode):
         self.debug_outputs = mode
+
+    def write_cur_scrot(self, debugfile=False, datestr=None):
+        if debugfile:
+            datestr = "debug"
+        elif datestr is None:
+            datestr = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = "{}/{}.png".format(scrot_dir,datestr)
+        os.system("scrot {}".format(filename))
 
     def write_cur_aligned(self, debugfile=False, datestr=None):
         if debugfile:
@@ -653,6 +666,10 @@ class MainApp():
             candidate = get_aligned(get_camera_image(self.camera))
             if candidate is not None:
                 theApp.redraw_needed = True
+                if theApp.setup_oneshot_camera:
+                    theApp.canned_aligned[CANNED_IMAGE_CAMERA_VECTOR_SOURCE] = candidate
+                    theApp.canned_aligned[CANNED_IMAGE_CAMERA_VECTOR_DEST] = candidate
+                    theApp.setup_oneshot_camera = False
                 theApp.canned_aligned[face_index] = candidate
                 theApp.clear_cached_encoded_and_textures(face_index)
 
@@ -806,6 +823,7 @@ def snapshot(dt):
 
     datestr = get_date_str()
     theApp.write_cur_aligned(datestr=datestr)
+    theApp.write_cur_scrot(datestr=datestr)
     if theApp.app_mode == APP_MODE_ATTRIBUTE:
         theApp.write_recon_triple(datestr)
     elif theApp.app_mode == APP_MODE_ONESHOT:
