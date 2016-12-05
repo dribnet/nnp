@@ -60,6 +60,9 @@ APP_MODE_ATTRIBUTE = 1
 APP_MODE_ONESHOT = 2
 APP_MODE_CLASSIFY = 3
 
+attribute_decoded_array = None
+oneshot_decoded_array = None
+
 # images for pre-defined vectors
 vector_files = [
     "images/OneShot.png",
@@ -78,13 +81,27 @@ small_vector_files = [
 
 # starter images
 canned_faces = [
-    "images/startup_face.jpg",
+    "images/startup_face1.png",
+    "images/startup_face2.png",
+    "images/startup_face3.png",
     "images/yann.png",
     "images/fei_fei.png",
     "images/bengio.jpg",
     "images/demis.jpg",
     "images/geoffrey.jpg",
+    "images/rafd/Rafd090_01_Caucasian_female_neutral_frontal.png",
+    "images/rafd/Rafd090_01_Caucasian_female_disgusted_frontal.png",
+    "images/rafd/Rafd090_01_Caucasian_female_fearful_frontal.png",
+    "images/rafd/Rafd090_01_Caucasian_female_happy_frontal.png",
+    "images/rafd/Rafd090_01_Caucasian_female_surprised_frontal.png",
+    "images/rafd/Rafd090_29_Moroccan_male_neutral_frontal.png",
 ]
+CANNED_IMAGE_CAMERA_VECTOR_SOURCE = 0
+CANNED_IMAGE_CAMERA_VECTOR_DEST = 1
+CANNED_IMAGE_CAMERA_IMAGE_SOURCE = 2
+CANNED_IMAGE_INITIAL_VECTOR_SOURCE = 8
+CANNED_IMAGE_INITIAL_VECTOR_DEST = 8
+CANNED_IMAGE_INITIAL_CANNED_FACE = 3
 
 # initialize and return camera handle
 def setup_camera(device_number):
@@ -93,6 +110,9 @@ def setup_camera(device_number):
     result2 = cam.set(cv2.CAP_PROP_FRAME_HEIGHT,cam_height)
     result3 = cam.set(cv2.CAP_PROP_FPS,1)
     return cam
+
+def shutdown_camera(device_number):
+    cv2.VideoCapture(device_number).release()
 
 # given a camera handle, return image in RGB format
 def get_camera_image(camera):
@@ -141,8 +161,15 @@ def do_key_press(symbol, modifiers):
     global cur_vector
     print("SO: {}".format(symbol))
     if(symbol == key.R):
-        theApp.camera_recording = not theApp.camera_recording
-        print("Camera recording is now {}".format(theApp.camera_recording))
+        if theApp.use_camera:
+            theApp.set_camera_recording(not theApp.camera_recording)
+        if theApp.camera_recording:
+            if theApp.arrow_mode == ARROW_MODE_IMAGE_SOURCE:
+                theApp.cur_canned_face = CANNED_IMAGE_CAMERA_IMAGE_SOURCE
+            elif theApp.arrow_mode == ARROW_MODE_VECTOR_SOURCE:
+                theApp.cur_vector_source = CANNED_IMAGE_CAMERA_VECTOR_SOURCE
+            elif theApp.arrow_mode == ARROW_MODE_VECTOR_DEST:
+                theApp.cur_vector_dest = CANNED_IMAGE_CAMERA_VECTOR_DEST
     elif(symbol == key.A):
         theApp.arrow_mode = ARROW_MODE_IMAGE_SOURCE
     elif(symbol == key.S):
@@ -151,7 +178,9 @@ def do_key_press(symbol, modifiers):
         theApp.arrow_mode = ARROW_MODE_VECTOR_DEST
     elif(symbol == key.G):
         theApp.gan_mode = not theApp.gan_mode
+        theApp.clear_all_cached_and_encoded_textures()
         theApp.last_recon_face = None
+        theApp.redraw_needed = True
         print("GAN mode is now {}".format(theApp.gan_mode))
     elif(symbol == key.DOWN):
         if theApp.arrow_mode == ARROW_MODE_IMAGE_SOURCE:
@@ -160,6 +189,7 @@ def do_key_press(symbol, modifiers):
             theApp.cur_vector_dest = canned_face_down(theApp.cur_vector_dest)
         elif theApp.arrow_mode == ARROW_MODE_VECTOR_SOURCE:
             theApp.cur_vector_source = canned_face_down(theApp.cur_vector_source)
+        theApp.redraw_needed = True;
     elif(symbol == key.UP):
         if theApp.arrow_mode == ARROW_MODE_IMAGE_SOURCE:
             theApp.cur_canned_face = canned_face_up(theApp.cur_canned_face)
@@ -167,23 +197,29 @@ def do_key_press(symbol, modifiers):
             theApp.cur_vector_dest = canned_face_up(theApp.cur_vector_dest)
         elif theApp.arrow_mode == ARROW_MODE_VECTOR_SOURCE:
             theApp.cur_vector_source = canned_face_up(theApp.cur_vector_source)
+        theApp.redraw_needed = True;
     elif(symbol == key.LEFT):
         cur_vector = (cur_vector - 1 + num_vectors) % num_vectors
+        theApp.redraw_needed = True
     elif(symbol == key.RIGHT):
         cur_vector = (cur_vector + 1) % num_vectors
+        theApp.redraw_needed = True
     elif(symbol == key.Z):
         # three vectors mode
         theApp.app_mode = APP_MODE_ATTRIBUTE
         theApp.arrow_mode = ARROW_MODE_IMAGE_SOURCE
+        theApp.redraw_needed = True
     elif(symbol == key.X):
         # one_shot mode
         theApp.app_mode = APP_MODE_ONESHOT
-        theApp.cur_vector_source = theApp.cur_canned_face
-        theApp.cur_vector_dest = theApp.cur_canned_face
+        theApp.cur_vector_source = CANNED_IMAGE_INITIAL_VECTOR_SOURCE
+        theApp.cur_vector_dest = CANNED_IMAGE_INITIAL_VECTOR_DEST
+        theApp.redraw_needed = True
         snapshot(None)
     elif(symbol == key.C):
         # one_shot mode
         theApp.app_mode = APP_MODE_CLASSIFY
+        theApp.redraw_needed = True
     elif(symbol == key.SPACE):
         print("SPACEBAR")
         snapshot(None);
@@ -236,20 +272,34 @@ win2_oneshot_c2 = None
 
 # watcher to load win2 images on filesystem change
 class InputFileHandler(FileSystemEventHandler):
+    last_processed = None
+
     def process(self, infile):
         global win2_aligned_im, win2_smile_im, win2_surprised_im, win2_angry_im
+        global win2_oneshot_a1, win2_oneshot_a2, win2_oneshot_b1, win2_oneshot_b2, win2_oneshot_c1, win2_oneshot_c2
         # basename = os.path.basename(infile)
         # if basename[0] == '.' or basename[0] == '_':
         #     print("Skipping infile: {}".format(infile))
         #     return;
-        print("Processing infile: {}".format(infile))
-        # aligned_file = "{}/{}".format(aligned_dir, basename)
-        # win2_aligned_im = imread(aligned_file, mode='RGB')
+        if infile == self.last_processed:
+            print("Skipping duplicate infile: {}".format(infile))
+        else:
+            print("Processing infile: {}".format(infile))
+            self.last_processed = infile
+
         img = imread(infile, mode='RGB')
-        win2_smile_im = img[0:256,0:256,0:3]
-        win2_surprised_im = img[0:256,256:512,0:3]
-        win2_angry_im = img[0:256,512:768,0:3]
-        win2_aligned_im = img[0:256,768:1024,0:3]
+        if infile.endswith("attrib.png"):
+            win2_smile_im = img[0:256,0:256,0:3]
+            win2_surprised_im = img[0:256,256:512,0:3]
+            win2_angry_im = img[0:256,512:768,0:3]
+            win2_aligned_im = img[0:256,768:1024,0:3]
+        else: # ends with oneshot.png
+            win2_oneshot_a1 = img[0:256,0:256,0:3]
+            win2_oneshot_a2 = img[0:256,256:512,0:3]
+            win2_oneshot_b1 = img[0:256,512:768,0:3]
+            win2_oneshot_b2 = img[0:256,768:1024,0:3]
+            win2_oneshot_c1 = img[0:256,1024:1280,0:3]
+            win2_oneshot_c2 = img[0:256,1280:1536,0:3]
         # if theApp is not None:
         #     draw2(None)
 
@@ -276,13 +326,15 @@ class MainApp():
     dmodel2 = None
     app_mode = APP_MODE_ATTRIBUTE
     gan_mode = False
-    cur_canned_face = 0
+    cur_canned_face = CANNED_IMAGE_INITIAL_CANNED_FACE
     cur_vector_source = 0
     cur_vector_dest  = 0
     scale_factor = None
     arrow_mode = ARROW_MODE_IMAGE_SOURCE
     camera_recording = False
     num_steps = 0
+    redraw_needed = True
+    last_recon_tex = None
 
     """Just a container for unfortunate global state"""
     def __init__(self):
@@ -331,7 +383,7 @@ class MainApp():
         self.canned_smaller_textures = []
         self.num_canned = len(canned_faces)
         for i in range(self.num_canned):
-            canned_face = imread(canned_faces[i])
+            canned_face = imread(canned_faces[i], mode='RGB')
             self.canned_aligned.append(get_aligned(canned_face))
             self.canned_encoded.append(None)
             self.canned_textures.append(None)
@@ -376,6 +428,7 @@ class MainApp():
 
         decode_list = []
         if self.gan_mode:
+            print("GAN MODE CONFIRMED")
             vector_index_start = 0
             cur_vector_offsets = vector_offsets2
             deblur_vector = None
@@ -407,10 +460,12 @@ class MainApp():
         return decoded_array
 
     # get a triple of effects image. not for one-shot
-    def write_recon_triple(self, dmodel_cur, datestr, scale_factor):
+    def update_recon_triple(self, dmodel_cur, scale_factor):
         global vector_offsets, vector_offsets2
+        global attribute_decoded_array
         global win2_aligned_im, win2_smile_im, win2_surprised_im, win2_angry_im
 
+        print("URF")
         if dmodel_cur is None or (not self.gan_mode and vector_offsets is None) or (self.gan_mode and vector_offsets2 is None):
             win2_smile_im = self.canned_aligned[self.cur_canned_face]
             win2_surprised_im = self.canned_aligned[self.cur_canned_face]
@@ -441,34 +496,38 @@ class MainApp():
         decoded = dmodel_cur.sample_at(np.array(decode_list))
         n, c, y, x = decoded.shape
         decoded_strip = np.concatenate(decoded, axis=2)
-        decoded_array = (255 * np.dstack(decoded_strip)).astype(np.uint8)
+        attribute_decoded_array = (255 * np.dstack(decoded_strip)).astype(np.uint8)
 
         if scale_factor is not None:
-            decoded_array = imresize(decoded_array, scale_factor)
+            attribute_decoded_array = imresize(attribute_decoded_array, scale_factor)
         elif self.gan_mode:
-            decoded_array = imresize(decoded_array, 2.0)
+            attribute_decoded_array = imresize(attribute_decoded_array, 2.0)
 
-        win2_smile_im = decoded_array[0:256,0:256,0:3]
-        win2_surprised_im = decoded_array[0:256,256:512,0:3]
-        win2_angry_im = decoded_array[0:256,512:768,0:3]
-        win2_aligned_im = decoded_array[0:256,768:1024,0:3]
+        win2_smile_im = attribute_decoded_array[0:256,0:256,0:3]
+        win2_surprised_im = attribute_decoded_array[0:256,256:512,0:3]
+        win2_angry_im = attribute_decoded_array[0:256,512:768,0:3]
+        win2_aligned_im = attribute_decoded_array[0:256,768:1024,0:3]
 
-        if not self.gan_mode:
+    def write_recon_triple(self, datestr):
+        global attribute_decoded_array
+
+        if not self.gan_mode and attribute_decoded_array is not None:
             filename = "{}/{}_attrib.png".format(atstrip1_dir, datestr)
             if os.path.exists(filename):
                 return
-            imsave(filename, decoded_array)
+            imsave(filename, attribute_decoded_array)
 
     # get a triple of effects image. not for one-shot
-    def write_oneshot_sixpack(self, dmodel_cur, datestr, scale_factor):
+    def update_oneshot_sixpack(self, dmodel_cur, scale_factor):
         global win2_oneshot_a1, win2_oneshot_a2, win2_oneshot_b1, win2_oneshot_b2, win2_oneshot_c1, win2_oneshot_c2
         global vector_offsets
+        global oneshot_decoded_array
 
+        print("UOS")
         index_a = self.cur_canned_face
         index_b = canned_face_up(index_a)
         index_c = canned_face_up(index_b)
         canned_indexes = [index_a, index_b, index_c]
-        print("Canned indexes {}".format(canned_indexes))
         if dmodel_cur is None or (not self.gan_mode and vector_offsets is None) or (self.gan_mode and vector_offsets2 is None):
             win2_oneshot_a1 = self.canned_aligned[index_a]
             win2_oneshot_a2 = self.canned_aligned[index_a]
@@ -500,25 +559,28 @@ class MainApp():
         decoded = dmodel_cur.sample_at(np.array(decode_list))
         n, c, y, x = decoded.shape
         decoded_strip = np.concatenate(decoded, axis=2)
-        decoded_array = (255 * np.dstack(decoded_strip)).astype(np.uint8)
+        oneshot_decoded_array = (255 * np.dstack(decoded_strip)).astype(np.uint8)
 
         if scale_factor is not None:
-            decoded_array = imresize(decoded_array, scale_factor)
+            oneshot_decoded_array = imresize(oneshot_decoded_array, scale_factor)
         elif self.gan_mode:
-            decoded_array = imresize(decoded_array, 2.0)
+            oneshot_decoded_array = imresize(oneshot_decoded_array, 2.0)
 
-        win2_oneshot_a1 = decoded_array[0:256,0:256,0:3]
-        win2_oneshot_a2 = decoded_array[0:256,256:512,0:3]
-        win2_oneshot_b1 = decoded_array[0:256,512:768,0:3]
-        win2_oneshot_b2 = decoded_array[0:256,768:1024,0:3]
-        win2_oneshot_c1 = decoded_array[0:256,1024:1280,0:3]
-        win2_oneshot_c2 = decoded_array[0:256,1280:1536,0:3]
+        win2_oneshot_a1 = oneshot_decoded_array[0:256,0:256,0:3]
+        win2_oneshot_a2 = oneshot_decoded_array[0:256,256:512,0:3]
+        win2_oneshot_b1 = oneshot_decoded_array[0:256,512:768,0:3]
+        win2_oneshot_b2 = oneshot_decoded_array[0:256,768:1024,0:3]
+        win2_oneshot_c1 = oneshot_decoded_array[0:256,1024:1280,0:3]
+        win2_oneshot_c2 = oneshot_decoded_array[0:256,1280:1536,0:3]
 
-        if not self.gan_mode:
+    def write_oneshot_sixpack(self, datestr):
+        global oneshot_decoded_array
+
+        if not self.gan_mode and oneshot_decoded_array is not None:
             filename = "{}/{}_oneshot.png".format(atstrip1_dir, datestr)
             if os.path.exists(filename):
                 return
-            imsave(filename, decoded_array)
+            imsave(filename, oneshot_decoded_array)
 
     def get_small_texture(self, image_index, super_small=False):
         if super_small:
@@ -532,24 +594,44 @@ class MainApp():
                 self.canned_small_textures[image_index] = image_to_texture(small_source)
             return self.canned_small_textures[image_index]
 
+    def clear_cached_encoded_and_textures(self, image_index):
+        self.canned_encoded[image_index] = None
+        self.canned_textures[image_index] = None
+        self.canned_small_textures[image_index] = None
+        self.canned_smaller_textures[image_index] = None
+
+    def clear_all_cached_and_encoded_textures(self):
+        for i in range(self.num_canned):
+            self.clear_cached_encoded_and_textures(i)
+
+    def set_camera_recording(self, state):
+        theApp.camera_recording = state
+        if (theApp.camera_recording):
+            self.camera = setup_camera(self.camera_device)
+        else:
+            self.camera = shutdown_camera(self.camera_device)
+        print("Camera recording is now {}".format(theApp.camera_recording))
+
     def step(self, dt):
         if self.cur_frame == 5:
             print("Fake key presses")
             # do_key_press(key.LEFT, None)
 
-        # initialize camera and dmodel after warming up
-        if self.camera is None and self.use_camera and self.cur_frame > 10:
-            print("Initializing camera")
-            self.camera = setup_camera(self.camera_device)
+        # # initialize camera and dmodel after warming up
+        # if self.camera is None and self.use_camera and self.cur_frame > 10:
+        #     print("Initializing camera")
+        #     self.camera = setup_camera(self.camera_device)
 
         if self.dmodel is None and self.model_name and self.cur_frame > 20:
             print("Initializing model {}".format(self.model_name))
             self.dmodel = DiscGenModel(filename=self.model_name)
+            self.redraw_needed = True
 
         if self.dmodel2 is None and self.model_name2 and self.cur_frame > 30:
             print("Initializing model {}".format(self.model_name2))
             self.dmodel2 = AliModel(filename=self.model_name2)
             print("Dmodel2 is {}".format(self.dmodel2))
+            self.redraw_needed = True
 
         if self.cur_frame == 35:
             print("Fake key presses")
@@ -559,18 +641,20 @@ class MainApp():
         # get source image
         if theApp.arrow_mode == ARROW_MODE_IMAGE_SOURCE:
             face_index = theApp.cur_canned_face
+            allowed_index = CANNED_IMAGE_CAMERA_IMAGE_SOURCE
         elif theApp.arrow_mode == ARROW_MODE_VECTOR_SOURCE:
             face_index = theApp.cur_vector_source
+            allowed_index = CANNED_IMAGE_CAMERA_VECTOR_SOURCE
         else:
             face_index = theApp.cur_vector_dest
-        if self.camera is not None and face_index == 0 and theApp.camera_recording:
+            allowed_index = CANNED_IMAGE_CAMERA_VECTOR_DEST
+
+        if self.camera is not None and face_index == allowed_index and theApp.camera_recording:
             candidate = get_aligned(get_camera_image(self.camera))
             if candidate is not None:
+                theApp.redraw_needed = True
                 theApp.canned_aligned[face_index] = candidate
-                theApp.canned_encoded[face_index] = None
-                theApp.canned_textures[face_index] = None
-                theApp.canned_small_textures[face_index] = None
-                theApp.canned_smaller_textures[face_index] = None
+                theApp.clear_cached_encoded_and_textures(face_index)
 
     def draw1(self, dt):
         global window1, cur_vector
@@ -600,14 +684,24 @@ class MainApp():
 
         self.canned_textures[self.cur_canned_face].blit(window_width / 2 - 128, window_height - 256)
 
-        if self.gan_mode and self.dmodel2 is not None:
-            recon = self.get_recon_strip(self.dmodel2, 2)
-        else:
-            recon = self.get_recon_strip(self.dmodel, self.scale_factor)
-        if recon is not None:
-            self.last_recon_face = recon
-            recon_tex = image_to_texture(recon)
-            recon_tex.blit(0, 0)
+        if self.redraw_needed:
+            if self.gan_mode and self.dmodel2 is not None:
+                recon = self.get_recon_strip(self.dmodel2, 2)
+            else:
+                recon = self.get_recon_strip(self.dmodel, self.scale_factor)
+
+            if recon is not None:
+                self.last_recon_face = recon
+                self.last_recon_tex = image_to_texture(recon)
+                if self.app_mode == APP_MODE_ATTRIBUTE:
+                    self.update_recon_triple(self.dmodel, self.scale_factor)
+                elif self.app_mode == APP_MODE_ONESHOT:
+                    self.update_oneshot_sixpack(self.dmodel, self.scale_factor)
+
+                self.redraw_needed = False
+
+        if self.last_recon_tex is not None:
+            self.last_recon_tex.blit(0, 0)
 
         # if self.debug_outputs:
         #     self.write_last_aligned(debugfile=True)
@@ -676,15 +770,19 @@ class MainApp():
                 win2_angry_tex.blit(window_width-256, 0)
 
 def step(dt):
-    theApp.step(dt)
-    if window1 != None:
-        window1.switch_to()
-        theApp.draw1(dt)
-    if window2 != None:
-        window2.switch_to()
-        theApp.draw2(dt)
-    if theApp.num_steps % 15 == 0:
-        snapshot(dt)
+    try:
+        theApp.step(dt)
+        if window1 != None:
+            window1.switch_to()
+            theApp.draw1(dt)
+        if window2 != None:
+            window2.switch_to()
+            theApp.draw2(dt)
+        if theApp.num_steps % 500 == 0:
+            snapshot(dt)
+    except Exception as e:
+        print("BAD PROGRAM: step caught {}".format(e))
+
     theApp.num_steps += 1
 
 # Draw Loop
@@ -709,16 +807,9 @@ def snapshot(dt):
     datestr = get_date_str()
     theApp.write_cur_aligned(datestr=datestr)
     if theApp.app_mode == APP_MODE_ATTRIBUTE:
-        if theApp.gan_mode and theApp.dmodel2 is not None:
-            theApp.write_recon_triple(theApp.dmodel2, datestr, 2)
-        else:
-            theApp.write_recon_triple(theApp.dmodel, datestr, theApp.scale_factor)
+        theApp.write_recon_triple(datestr)
     elif theApp.app_mode == APP_MODE_ONESHOT:
-        if theApp.gan_mode and theApp.dmodel2 is not None:
-            theApp.write_oneshot_sixpack(theApp.dmodel2, datestr, 2)
-        else:
-            theApp.write_oneshot_sixpack(theApp.dmodel, datestr, theApp.scale_factor)
-
+        theApp.write_oneshot_sixpack(datestr)
 
 theApp = MainApp()
 
@@ -841,7 +932,7 @@ if __name__ == "__main__":
         theApp.setDebugOutputs(args.debug_outputs)
 
     snapshot(None)
-    pyglet.clock.schedule_interval(step, 1)
+    pyglet.clock.schedule_interval(step, 0.1)
     # pyglet.clock.schedule_interval(draw1, 1)
     # pyglet.clock.schedule_interval(draw2, 1)
     # pyglet.clock.schedule_interval(snapshot, 15)
