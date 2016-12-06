@@ -87,8 +87,8 @@ canned_faces = [
     "images/yann.png",
     "images/fei_fei.png",
     "images/bengio.jpg",
-    "images/demis.jpg",
-    "images/geoffrey.jpg",
+    "images/kingma.jpg",
+    "images/goodfellow.jpg",
     "images/rafd/Rafd090_01_Caucasian_female_neutral_frontal.png",
     "images/rafd/Rafd090_01_Caucasian_female_disgusted_frontal.png",
     "images/rafd/Rafd090_01_Caucasian_female_fearful_frontal.png",
@@ -238,13 +238,13 @@ def get_date_str():
 pipeline_dir = "pipeline/{}".format(get_date_str())
 os.makedirs(pipeline_dir)
 aligned_dir = "{}/aligned".format(pipeline_dir)
-recon_dir = "{}/recon".format(pipeline_dir)
+# recon_dir = "{}/recon".format(pipeline_dir)
 atstrip1_dir = "{}/atstrip1".format(pipeline_dir)
 atstrip2_dir = "{}/atstrip2".format(pipeline_dir)
 roc_dir = "{}/roc".format(pipeline_dir)
 scrot_dir = "{}/scrot".format(pipeline_dir)
 os.makedirs(aligned_dir)
-os.makedirs(recon_dir)
+# os.makedirs(recon_dir)
 os.makedirs(atstrip1_dir)
 os.makedirs(atstrip2_dir)
 os.makedirs(roc_dir)
@@ -417,10 +417,10 @@ class MainApp():
             return
         imsave(filename, self.canned_aligned[theApp.cur_canned_face])
 
-        filename = "{}/{}.png".format(recon_dir, datestr)    
-        if not debugfile and os.path.exists(filename):
-            return
-        imsave(filename, self.canned_aligned[self.cur_canned_face])
+        # filename = "{}/{}.png".format(recon_dir, datestr)
+        # if not debugfile and os.path.exists(filename):
+        #     return
+        # imsave(filename, self.canned_aligned[self.cur_canned_face])
 
     def get_encoded(self, dmodel_cur, image_index, scale_factor):
         if self.canned_encoded[image_index] is None:
@@ -504,6 +504,7 @@ class MainApp():
                 vector_scalar = 1.5
                 attribute_vector = cur_vector_offsets[vector_index_start+i]
                 cur_anchor = encoded_source_image + vector_scalar * attribute_vector
+                # print("ENCODED {} AND AV {}".format(encoded_source_image.shape, attribute_vector.shape))
                 if not self.gan_mode:
                     cur_anchor += deblur_vector
             decode_list.append(cur_anchor)
@@ -711,10 +712,14 @@ class MainApp():
             if recon is not None:
                 self.last_recon_face = recon
                 self.last_recon_tex = image_to_texture(recon)
+                if self.gan_mode and self.dmodel2 is not None:
+                    dmodel_cur = self.dmodel2
+                else:
+                    dmodel_cur = self.dmodel
                 if self.app_mode == APP_MODE_ATTRIBUTE:
-                    self.update_recon_triple(self.dmodel, self.scale_factor)
+                    self.update_recon_triple(dmodel_cur, self.scale_factor)
                 elif self.app_mode == APP_MODE_ONESHOT:
-                    self.update_oneshot_sixpack(self.dmodel, self.scale_factor)
+                    self.update_oneshot_sixpack(dmodel_cur, self.scale_factor)
 
                 self.redraw_needed = False
 
@@ -825,6 +830,7 @@ def snapshot(dt):
     datestr = get_date_str()
     theApp.write_cur_aligned(datestr=datestr)
     if theApp.scrot_enabled:
+        print("SCROT RUNNING")
         theApp.write_cur_scrot(datestr=datestr)
     if theApp.app_mode == APP_MODE_ATTRIBUTE:
         theApp.write_recon_triple(datestr)
@@ -882,7 +888,7 @@ if __name__ == "__main__":
 
     theApp.camera_device = args.camera
     theApp.scale_factor = args.scale_factor
-    theApp.scrot_enabled == args.scrot
+    theApp.scrot_enabled = args.scrot
 
     display = pyglet.window.get_platform().get_default_display()
     screens = display.get_screens()
