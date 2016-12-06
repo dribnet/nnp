@@ -26,10 +26,6 @@ import time
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
 
-#number of predefined attribute vectors, initial one
-num_vectors   = 3
-cur_vector    = 0
-
 # global app of messy state
 theApp = None
 
@@ -67,9 +63,20 @@ oneshot_decoded_array = None
 # images for pre-defined vectors
 vector_files = [
     "images/OneShot.png",
-    "images/Happy_flip.png",
+    "images/Happy.png",
     "images/Angry.png",
     "images/Sunglasses.png",
+    "images/MouthOpen.png",
+    "images/MouthOpenBalanced.png",
+]
+
+vector_files_flip = [
+    "images/OneShot_flip.png",
+    "images/Happy_flip.png",
+    "images/Angry_flip.png",
+    "images/Sunglasses_flip.png",
+    "images/MouthOpen_flip.png",
+    "images/MouthOpenBalanced_flip.png",
 ]
 
 # small images for pre-defined vectors
@@ -78,7 +85,13 @@ small_vector_files = [
     "images/HappySmall.png",
     "images/AngrySmall.png",
     "images/SunglassesSmall.png",
+    "images/MouthOpenSmall.png",
+    "images/MouthOpenBalancedSmall.png",
 ]
+
+#number of predefined attribute vectors, initial one
+num_vectors   = len(vector_files) - 1
+cur_vector    = 0
 
 # starter images
 canned_faces = [
@@ -349,6 +362,7 @@ class MainApp():
         self.window_sizes = window_sizes
         self.cur_frame = 0
         self.vector_textures = []
+        self.vector_flip_textures = []
         self.small_vector_textures = []
         for i in range(len(vector_files)):
             png = Image.open(vector_files[i])
@@ -359,7 +373,8 @@ class MainApp():
             else:
                 vector_im = png
             vector_im = np.asarray(vector_im)
-            # vector_im = imread(vector_files[i], mode='RGB')
+            self.vector_textures.append(image_to_texture(vector_im))
+            # lazy initialize sizes
             if i == 0:
                 h, w, c = vector_im.shape
                 self.vector_x = []
@@ -372,7 +387,16 @@ class MainApp():
                     self.vector_y.append(int((win_height - h) / 2))
                     self.vector_y1.append(int(0))
                     self.vector_y3.append(int(win_height - h))
-            self.vector_textures.append(image_to_texture(vector_im))
+            # also load flips
+            png = Image.open(vector_files_flip[i])
+            if png.mode == "RGBA":
+                png.load()
+                vector_im = Image.new("RGB", png.size, (0, 0, 0))
+                vector_im.paste(png, mask=png.split()[3]) # 3 is the alpha channel
+            else:
+                vector_im = png
+            vector_im = np.asarray(vector_im)
+            self.vector_flip_textures.append(image_to_texture(vector_im))
         for i in range(len(small_vector_files)):
             png = Image.open(small_vector_files[i])
             if png.mode == "RGBA":
@@ -698,8 +722,10 @@ class MainApp():
 
         if win_num is 0:
             pyglet.gl.glClearColor(1, 1, 1, 1)
+            cur_vector_textures = self.vector_flip_textures
         else:
             pyglet.gl.glClearColor(0, 0, 0, 1)
+            cur_vector_textures = self.vector_textures
 
         # clear window only sometimes
         windows[win_num].clear()
@@ -710,7 +736,7 @@ class MainApp():
             vector_index = cur_vector + 1
         else:
             vector_index = 0
-        self.vector_textures[vector_index].blit(self.vector_x[win_num], self.vector_y[win_num])
+        cur_vector_textures[vector_index].blit(self.vector_x[win_num], self.vector_y[win_num])
 
         if self.app_mode == APP_MODE_ONESHOT:
             source_tex = self.get_small_texture(self.cur_vector_source)
