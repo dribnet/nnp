@@ -42,8 +42,9 @@ window_height = 800
 window_width = 1280
 
 # actual pyglet windows
-window1 = None
-window2 = None
+windows = []
+# window1 = None
+# window2 = None
 
 # camera settings
 # cam_width = 720
@@ -66,7 +67,7 @@ oneshot_decoded_array = None
 # images for pre-defined vectors
 vector_files = [
     "images/OneShot.png",
-    "images/Happy.png",
+    "images/Happy_flip.png",
     "images/Angry.png",
     "images/Sunglasses.png",
 ]
@@ -89,18 +90,18 @@ canned_faces = [
     "images/bengio.jpg",
     "images/kingma.jpg",
     "images/goodfellow.jpg",
+    "images/rafd/Rafd090_29_Moroccan_male_neutral_frontal.png",
     "images/rafd/Rafd090_01_Caucasian_female_neutral_frontal.png",
     "images/rafd/Rafd090_01_Caucasian_female_disgusted_frontal.png",
     "images/rafd/Rafd090_01_Caucasian_female_fearful_frontal.png",
     "images/rafd/Rafd090_01_Caucasian_female_happy_frontal.png",
     "images/rafd/Rafd090_01_Caucasian_female_surprised_frontal.png",
-    "images/rafd/Rafd090_29_Moroccan_male_neutral_frontal.png",
 ]
 CANNED_IMAGE_CAMERA_VECTOR_SOURCE = 0
 CANNED_IMAGE_CAMERA_VECTOR_DEST = 1
 CANNED_IMAGE_CAMERA_IMAGE_SOURCE = 2
-CANNED_IMAGE_INITIAL_VECTOR_SOURCE = 8
-CANNED_IMAGE_INITIAL_VECTOR_DEST = 8
+CANNED_IMAGE_INITIAL_VECTOR_SOURCE = 9
+CANNED_IMAGE_INITIAL_VECTOR_DEST = 9
 CANNED_IMAGE_INITIAL_CANNED_FACE = 3
 
 # initialize and return camera handle
@@ -341,9 +342,11 @@ class MainApp():
     last_recon_tex = None
     setup_oneshot_camera = False
     scrot_enabled = False
+    window_sizes = None
 
     """Just a container for unfortunate global state"""
-    def __init__(self):
+    def __init__(self, window_sizes):
+        self.window_sizes = window_sizes
         self.cur_frame = 0
         self.vector_textures = []
         self.small_vector_textures = []
@@ -359,10 +362,16 @@ class MainApp():
             # vector_im = imread(vector_files[i], mode='RGB')
             if i == 0:
                 h, w, c = vector_im.shape
-                self.vector_x = int((window_width - w) / 2)
-                self.vector_y = int((window_height - h) / 2)
-                self.vector_y1 = int(0)
-                self.vector_y3 = int(window_height - h)
+                self.vector_x = []
+                self.vector_y = []
+                self.vector_y1 = []
+                self.vector_y3 = []
+                for size in self.window_sizes:
+                    win_width, win_height = size
+                    self.vector_x.append(int((win_width - w) / 2))
+                    self.vector_y.append(int((win_height - h) / 2))
+                    self.vector_y1.append(int(0))
+                    self.vector_y3.append(int(win_height - h))
             self.vector_textures.append(image_to_texture(vector_im))
         for i in range(len(small_vector_files)):
             png = Image.open(small_vector_files[i])
@@ -374,12 +383,18 @@ class MainApp():
                 vector_im = png
             vector_im = np.asarray(vector_im)
             # vector_im = imread(vector_files[i], mode='RGB')
-            if i == 1:
+            if i == 0:
                 h, w, c = vector_im.shape
-                self.small_vector_x = int((window_width - w) / 2)
-                self.small_vector_y = int((window_height - h) / 2)
-                self.small_vector_y1 = int((256 - h) / 2)
-                self.small_vector_y3 = int(window_height-(256/2) - h/2)
+                self.small_vector_x = []
+                self.small_vector_y = []
+                self.small_vector_y1 = []
+                self.small_vector_y3 = []
+                for size in self.window_sizes:
+                    win_width, win_height = size
+                    self.small_vector_x.append(int((win_width - w) / 2))
+                    self.small_vector_y.append(int((win_height - h) / 2))
+                    self.small_vector_y1.append(int((256 - h) / 2))
+                    self.small_vector_y3.append(int(win_height-(256/2) - h/2))
             self.small_vector_textures.append(image_to_texture(vector_im))
         self.cur_canned_face = CANNED_IMAGE_INITIAL_CANNED_FACE
         self.canned_aligned = []
@@ -427,12 +442,12 @@ class MainApp():
             self.canned_encoded[image_index] = encode_from_image(self.canned_aligned[image_index], dmodel_cur, scale_factor)
         return self.canned_encoded[image_index]
 
-    def get_recon_strip(self, dmodel_cur, scale_factor):
+    def get_recon_strip(self, dmodel_cur, scale_factor, num_across):
         global vector_offsets, vector_offsets2, cur_vector
 
         if dmodel_cur is None or (not self.gan_mode and vector_offsets is None) or (self.gan_mode and vector_offsets2 is None):
             decode_list = []
-            for i in range(5):
+            for i in range(num_across):
                 decode_list.append(self.canned_aligned[self.cur_canned_face])
             decoded = np.array(decode_list)
             decoded_array = np.concatenate(decoded, axis=1)
@@ -457,8 +472,8 @@ class MainApp():
             encoded_vector_dest = self.get_encoded(dmodel_cur, self.cur_vector_dest, scale_factor)
             attribute_vector = encoded_vector_dest - encoded_vector_source
 
-        for i in range(5):
-            vector_scalar = pr_map(i, 0, 5, -1.5, 1.5)
+        for i in range(num_across):
+            vector_scalar = pr_map(i, 0, num_across, -2, 2)
             cur_anchor = encoded_source_image + vector_scalar * attribute_vector
             if not self.gan_mode:
                 cur_anchor += deblur_vector
@@ -675,11 +690,19 @@ class MainApp():
                 theApp.canned_aligned[face_index] = candidate
                 theApp.clear_cached_encoded_and_textures(face_index)
 
-    def draw1(self, dt):
-        global window1, cur_vector
+    def draw_strip(self, dt, win_num):
+        global windows, cur_vector
+        win_width, win_height = self.window_sizes[win_num]
+        num_recon_strip = int(win_width / 256)
+        width_recon_strip = 256 * num_recon_strip
+
+        if win_num is 0:
+            pyglet.gl.glClearColor(1, 1, 1, 1)
+        else:
+            pyglet.gl.glClearColor(0, 0, 0, 1)
 
         # clear window only sometimes
-        window1.clear()
+        windows[win_num].clear()
 
         align_im = theApp.canned_aligned[theApp.cur_canned_face]
 
@@ -687,27 +710,27 @@ class MainApp():
             vector_index = cur_vector + 1
         else:
             vector_index = 0
-        self.vector_textures[vector_index].blit(self.vector_x, self.vector_y)
+        self.vector_textures[vector_index].blit(self.vector_x[win_num], self.vector_y[win_num])
 
         if self.app_mode == APP_MODE_ONESHOT:
             source_tex = self.get_small_texture(self.cur_vector_source)
-            source_x, source_y = self.vector_x + 176, self.vector_y + 11
+            source_x, source_y = self.vector_x[win_num] + 176, self.vector_y[win_num] + 11
             source_tex.blit(source_x, source_y)
 
             dest_tex = self.get_small_texture(self.cur_vector_dest)
-            source_x, source_y = self.vector_x + 688, self.vector_y + 11
+            source_x, source_y = self.vector_x[win_num] + 688, self.vector_y[win_num] + 11
             dest_tex.blit(source_x, source_y)
 
         if self.canned_textures[self.cur_canned_face] is None:
             self.canned_textures[self.cur_canned_face] = image_to_texture(self.canned_aligned[self.cur_canned_face])
 
-        self.canned_textures[self.cur_canned_face].blit(window_width / 2 - 128, window_height - 256)
+        self.canned_textures[self.cur_canned_face].blit(win_width / 2 - 128, win_height - 256)
 
         if self.redraw_needed:
             if self.gan_mode and self.dmodel2 is not None:
-                recon = self.get_recon_strip(self.dmodel2, 2)
+                recon = self.get_recon_strip(self.dmodel2, 2, num_recon_strip)
             else:
-                recon = self.get_recon_strip(self.dmodel, self.scale_factor)
+                recon = self.get_recon_strip(self.dmodel, self.scale_factor, num_recon_strip)
 
             if recon is not None:
                 self.last_recon_face = recon
@@ -724,7 +747,8 @@ class MainApp():
                 self.redraw_needed = False
 
         if self.last_recon_tex is not None:
-            self.last_recon_tex.blit(0, 0)
+            # print("{}, {} {}".format(win_width / 2 - width_recon_strip / 2, win_width, width_recon_strip))
+            self.last_recon_tex.blit(win_width / 2 - width_recon_strip / 2, 0)
 
         # if self.debug_outputs:
         #     self.write_last_aligned(debugfile=True)
@@ -734,94 +758,86 @@ class MainApp():
         self.cur_frame += 1
         return
 
-    def draw_oneshot_small(self, vector_y, source_tex, dest_tex):
-        self.small_vector_textures[0].blit(self.small_vector_x, vector_y)
-        source_x, source_y = self.small_vector_x + 90, vector_y + 24
+    def draw_oneshot_small(self, vector_y, source_tex, dest_tex, win_num):
+        self.small_vector_textures[0].blit(self.small_vector_x[win_num], vector_y)
+        source_x, source_y = self.small_vector_x[win_num] + 90, vector_y + 24
         source_tex.blit(source_x, source_y)
-        dest_x, dest_y = self.small_vector_x + 540, vector_y + 24
+        dest_x, dest_y = self.small_vector_x[win_num] + 540, vector_y + 24
         dest_tex.blit(dest_x, dest_y)
 
-    def draw2(self, dt):
-        window2.clear()
+    def draw_triple(self, dt, win_num):
+        win_width, win_height = self.window_sizes[win_num]
+
+        windows[win_num].clear()
         global win2_aligned_im, win2_smile_im, win2_surprised_im, win2_angry_im
         global win2_oneshot_a1, win2_oneshot_a2, win2_oneshot_b1, win2_oneshot_b2, win2_oneshot_c1, win2_oneshot_c2
         if self.app_mode == APP_MODE_ONESHOT:
             if win2_oneshot_a1 is not None:
                 oneshot_tex = image_to_texture(win2_oneshot_a1)
-                oneshot_tex.blit(0, window_height-256)
+                oneshot_tex.blit(0, win_height-256)
             if win2_oneshot_a2 is not None:
                 oneshot_tex = image_to_texture(win2_oneshot_a2)
-                oneshot_tex.blit(window_width-256, window_height-256)
+                oneshot_tex.blit(win_width-256, win_height-256)
             if win2_oneshot_b1 is not None:
                 oneshot_tex = image_to_texture(win2_oneshot_b1)
-                oneshot_tex.blit(0, int((window_height-256)/2))
+                oneshot_tex.blit(0, int((win_height-256)/2))
             if win2_oneshot_b2 is not None:
                 oneshot_tex = image_to_texture(win2_oneshot_b2)
-                oneshot_tex.blit(window_width-256, int((window_height-256)/2))
+                oneshot_tex.blit(win_width-256, int((win_height-256)/2))
             if win2_oneshot_c1 is not None:
                 oneshot_tex = image_to_texture(win2_oneshot_c1)
                 oneshot_tex.blit(0, 0)
             if win2_oneshot_c2 is not None:
                 oneshot_tex = image_to_texture(win2_oneshot_c2)
-                oneshot_tex.blit(window_width-256, 0)
+                oneshot_tex.blit(win_width-256, 0)
 
             source_tex = self.get_small_texture(self.cur_vector_source, True)
             dest_tex = self.get_small_texture(self.cur_vector_dest, True)
             # top
-            self.draw_oneshot_small(self.small_vector_y3, source_tex, dest_tex)
+            self.draw_oneshot_small(self.small_vector_y3[win_num], source_tex, dest_tex, win_num)
             # middle
-            self.draw_oneshot_small(self.small_vector_y, source_tex, dest_tex)
+            self.draw_oneshot_small(self.small_vector_y[win_num], source_tex, dest_tex, win_num)
             # bottom
-            self.draw_oneshot_small(self.small_vector_y1, source_tex, dest_tex)
+            self.draw_oneshot_small(self.small_vector_y1[win_num], source_tex, dest_tex, win_num)
         else:
-            self.small_vector_textures[1].blit(self.small_vector_x, self.small_vector_y3)
-            self.small_vector_textures[2].blit(self.small_vector_x, self.small_vector_y)
-            self.small_vector_textures[3].blit(self.small_vector_x, self.small_vector_y1)
+            self.small_vector_textures[1].blit(self.small_vector_x[win_num], self.small_vector_y3[win_num])
+            self.small_vector_textures[2].blit(self.small_vector_x[win_num], self.small_vector_y[win_num])
+            self.small_vector_textures[3].blit(self.small_vector_x[win_num], self.small_vector_y1[win_num])
             if win2_aligned_im is not None:
                 win2_aligned_tex = image_to_texture(win2_aligned_im)
                 win2_aligned_tex.blit(0, 0)
-                win2_aligned_tex.blit(0, int((window_height-256)/2))
-                win2_aligned_tex.blit(0, window_height-256)
+                win2_aligned_tex.blit(0, int((win_height-256)/2))
+                win2_aligned_tex.blit(0, win_height-256)
             if win2_smile_im is not None:
                 win2_smile_tex = image_to_texture(win2_smile_im)
-                win2_smile_tex.blit(window_width-256, window_height-256)
+                win2_smile_tex.blit(win_width-256, win_height-256)
             if win2_surprised_im is not None:
                 win2_surprised_tex = image_to_texture(win2_surprised_im)
-                win2_surprised_tex.blit(window_width-256, int((window_height-256)/2))
+                win2_surprised_tex.blit(win_width-256, int((win_height-256)/2))
             if win2_angry_im is not None:
                 win2_angry_tex = image_to_texture(win2_angry_im)
-                win2_angry_tex.blit(window_width-256, 0)
+                win2_angry_tex.blit(win_width-256, 0)
 
 def step(dt):
-    try:
-        theApp.step(dt)
-        if window1 != None:
-            window1.switch_to()
-            theApp.draw1(dt)
-        if window2 != None:
-            window2.switch_to()
-            theApp.draw2(dt)
-        if theApp.num_steps % 500 == 0:
-            snapshot(dt)
-    except Exception as e:
-        print("BAD PROGRAM: step caught {}".format(e))
+    global windows
+    # try:
+    theApp.step(dt)
+    for i in range(len(windows)):
+        if windows[i] != None:
+            windows[i].switch_to()
+            theApp.draw_functions[i](dt, i)
+    # if window1 != None:
+    #     window1.switch_to()
+    #     theApp.draw_functions[0](dt, 0)
+    # if window2 != None:
+    #     window2.switch_to()
+    #     theApp.draw_functions[1](dt, 1)
+    if theApp.num_steps % 500 == 0:
+        snapshot(dt)
+    # except Exception as e:
+    #     print("BAD PROGRAM: step caught {}".format(e))
 
     theApp.num_steps += 1
-
-# Draw Loop
-def draw1(dt):
-    global window1
-    if window1 == None:
-        return
-    window1.switch_to()
-    theApp.draw1(dt)
-
-def draw2(dt):
-    global window2
-    if window2 == None:
-        return
-    window2.switch_to()
-    theApp.draw2(dt)
 
 # snapshot the current state and write a file to the processing queue
 def snapshot(dt):
@@ -837,7 +853,17 @@ def snapshot(dt):
     elif theApp.app_mode == APP_MODE_ONESHOT:
         theApp.write_oneshot_sixpack(datestr)
 
-theApp = MainApp()
+window_sizes = [
+    [1920, 1080],
+    [1280, 800],
+    [1280, 800],
+]
+theApp = MainApp(window_sizes)
+theApp.draw_functions = [
+    theApp.draw_strip,
+    theApp.draw_triple,
+    theApp.draw_strip,
+]
 
 if __name__ == "__main__":
 
@@ -892,30 +918,37 @@ if __name__ == "__main__":
 
     display = pyglet.window.get_platform().get_default_display()
     screens = display.get_screens()
+
     if args.skip1:
         window1 = None
     elif args.full1 is not None:
         window1 = pyglet.window.Window(fullscreen=True, screen=screens[args.full1])
     else:
-        window1 = pyglet.window.Window(window_width, window_height, resizable=False)
-        window1.set_location(0, 0)
+        window1 = pyglet.window.Window(win_width[0], win_height[0], resizable=False)
+        # window1.set_location(0, 0)
+    windows.append(window1)
 
     if args.skip2:
         window2 = None
     elif args.full2 is not None:
         window2 = pyglet.window.Window(fullscreen=True, screen=screens[args.full2])
     else:
-        window2 = pyglet.window.Window(window_width, window_height, resizable=False)
-        window2.set_location(100, 100)
+        window2 = pyglet.window.Window(win_width[1], win_height[1], resizable=False)
+        # window2.set_location(100, 100)
+    windows.append(window2)
 
-    if window1 is not None:
-        @window1.event
-        def on_key_press(symbol, modifiers):
-            do_key_press(symbol, modifiers)
-    if window2 is not None:
-        @window2.event
-        def on_key_press(symbol, modifiers):
-            do_key_press(symbol, modifiers)
+    window3 = pyglet.window.Window(fullscreen=True, screen=screens[2])
+    windows.append(window3)
+
+    for window in windows:
+        if window is not None:
+            @window.event
+            def on_key_press(symbol, modifiers):
+                do_key_press(symbol, modifiers)
+    # if window2 is not None:
+    #     @window2.event
+    #     def on_key_press(symbol, modifiers):
+    #         do_key_press(symbol, modifiers)
 
     theApp.use_camera = not args.no_camera
     theApp.model_name = args.model
@@ -962,7 +995,4 @@ if __name__ == "__main__":
 
     snapshot(None)
     pyglet.clock.schedule_interval(step, 0.1)
-    # pyglet.clock.schedule_interval(draw1, 1)
-    # pyglet.clock.schedule_interval(draw2, 1)
-    # pyglet.clock.schedule_interval(snapshot, 15)
     pyglet.app.run()
