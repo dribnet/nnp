@@ -45,8 +45,10 @@ windows = []
 # camera settings
 # cam_width = 720
 # cam_height = 512
-cam_width = 400
-cam_height = 300
+# cam_width = 400
+# cam_height = 300
+cam_width = 560
+cam_height = 360
 
 # constants - arrow up/down mode
 ARROW_MODE_VECTOR_SOURCE = 1
@@ -131,6 +133,7 @@ def shutdown_camera(device_number):
 # given a camera handle, return image in RGB format
 def get_camera_image(camera):
     retval, img = camera.read()
+    img = cv2.flip(img, 1)
     img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
     return img
 
@@ -251,14 +254,14 @@ def get_date_str():
 
 pipeline_dir = "pipeline/{}".format(get_date_str())
 os.makedirs(pipeline_dir)
+camera_dir = "{}/camera".format(pipeline_dir)
 aligned_dir = "{}/aligned".format(pipeline_dir)
-# recon_dir = "{}/recon".format(pipeline_dir)
 atstrip1_dir = "{}/atstrip1".format(pipeline_dir)
 atstrip2_dir = "{}/atstrip2".format(pipeline_dir)
 roc_dir = "{}/roc".format(pipeline_dir)
 scrot_dir = "{}/scrot".format(pipeline_dir)
+os.makedirs(camera_dir)
 os.makedirs(aligned_dir)
-# os.makedirs(recon_dir)
 os.makedirs(atstrip1_dir)
 os.makedirs(atstrip2_dir)
 os.makedirs(roc_dir)
@@ -356,6 +359,7 @@ class MainApp():
     setup_oneshot_camera = False
     scrot_enabled = False
     window_sizes = None
+    cur_camera = None
 
     """Just a container for unfortunate global state"""
     def __init__(self, window_sizes):
@@ -456,10 +460,11 @@ class MainApp():
             return
         imsave(filename, self.canned_aligned[theApp.cur_canned_face])
 
-        # filename = "{}/{}.png".format(recon_dir, datestr)
-        # if not debugfile and os.path.exists(filename):
-        #     return
-        # imsave(filename, self.canned_aligned[self.cur_canned_face])
+        if self.cur_camera is not None:
+            filename = "{}/{}.png".format(camera_dir, datestr)
+            if not debugfile and os.path.exists(filename):
+                return
+            imsave(filename, self.cur_camera)
 
     def get_encoded(self, dmodel_cur, image_index, scale_factor):
         if self.canned_encoded[image_index] is None:
@@ -704,7 +709,8 @@ class MainApp():
             allowed_index = CANNED_IMAGE_CAMERA_VECTOR_DEST
 
         if self.camera is not None and face_index == allowed_index and theApp.camera_recording:
-            candidate = get_aligned(get_camera_image(self.camera))
+            self.cur_camera = get_camera_image(self.camera)
+            candidate = get_aligned(self.cur_camera)
             if candidate is not None:
                 theApp.redraw_needed = True
                 if theApp.setup_oneshot_camera:
@@ -723,9 +729,11 @@ class MainApp():
         if win_num is 0:
             pyglet.gl.glClearColor(1, 1, 1, 1)
             cur_vector_textures = self.vector_flip_textures
+            show_camera = True
         else:
             pyglet.gl.glClearColor(0, 0, 0, 1)
             cur_vector_textures = self.vector_textures
+            show_camera = False
 
         # clear window only sometimes
         windows[win_num].clear()
@@ -776,6 +784,9 @@ class MainApp():
             # print("{}, {} {}".format(win_width / 2 - width_recon_strip / 2, win_width, width_recon_strip))
             self.last_recon_tex.blit(win_width / 2 - width_recon_strip / 2, 0)
 
+        if show_camera and self.camera_recording and self.cur_camera is not None:
+            camera_texture = image_to_texture(self.cur_camera)
+            camera_texture.blit(0, win_height - cam_height)
         # if self.debug_outputs:
         #     self.write_last_aligned(debugfile=True)
 
