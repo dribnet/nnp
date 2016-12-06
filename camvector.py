@@ -340,6 +340,7 @@ class MainApp():
     redraw_needed = True
     last_recon_tex = None
     setup_oneshot_camera = False
+    scrot_enabled = False
 
     """Just a container for unfortunate global state"""
     def __init__(self):
@@ -823,7 +824,8 @@ def snapshot(dt):
 
     datestr = get_date_str()
     theApp.write_cur_aligned(datestr=datestr)
-    theApp.write_cur_scrot(datestr=datestr)
+    if theApp.scrot_enabled:
+        theApp.write_cur_scrot(datestr=datestr)
     if theApp.app_mode == APP_MODE_ATTRIBUTE:
         theApp.write_recon_triple(datestr)
     elif theApp.app_mode == APP_MODE_ONESHOT:
@@ -849,6 +851,8 @@ if __name__ == "__main__":
                         help="indexes to offsets in anchor-offset2")    
     parser.add_argument('--no-camera', dest='no_camera', default=False, action='store_true',
                         help="disable camera")
+    parser.add_argument('--scrot', dest='scrot', default=False, action='store_true',
+                        help="enable screen grabs")
     parser.add_argument('--skip1', dest='skip1', default=False, action='store_true',
                         help="no window 1")
     parser.add_argument('--skip2', dest='skip2', default=False, action='store_true',
@@ -878,6 +882,7 @@ if __name__ == "__main__":
 
     theApp.camera_device = args.camera
     theApp.scale_factor = args.scale_factor
+    theApp.scrot_enabled == args.scrot
 
     display = pyglet.window.get_platform().get_default_display()
     screens = display.get_screens()
