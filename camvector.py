@@ -857,22 +857,16 @@ class MainApp():
 
 def step(dt):
     global windows
-    # try:
-    theApp.step(dt)
-    for i in range(len(windows)):
-        if windows[i] != None:
-            windows[i].switch_to()
-            theApp.draw_functions[i](dt, i)
-    # if window1 != None:
-    #     window1.switch_to()
-    #     theApp.draw_functions[0](dt, 0)
-    # if window2 != None:
-    #     window2.switch_to()
-    #     theApp.draw_functions[1](dt, 1)
-    if theApp.num_steps % 500 == 0:
-        snapshot(dt)
-    # except Exception as e:
-    #     print("BAD PROGRAM: step caught {}".format(e))
+    try:
+        theApp.step(dt)
+        for i in range(len(windows)):
+            if windows[i] != None:
+                windows[i].switch_to()
+                theApp.draw_functions[i](dt, i)
+        if theApp.num_steps % 300 == 0:
+            snapshot(dt)
+    except Exception as e:
+        print("BAD PROGRAM: step caught {}".format(e))
 
     theApp.num_steps += 1
 
