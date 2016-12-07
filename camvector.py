@@ -1032,6 +1032,7 @@ def snapshot(dt):
 
 window_sizes = [
     [1920, 1080],
+    [1920, 1080],
     [1280, 800],
     [1280, 800],
 ]
@@ -1040,6 +1041,7 @@ theApp.draw_functions = [
     theApp.draw_strip,
     theApp.draw_triple,
     theApp.draw_strip,
+    theApp.draw_triple,
 ]
 
 if __name__ == "__main__":
@@ -1116,6 +1118,9 @@ if __name__ == "__main__":
 
     window3 = pyglet.window.Window(fullscreen=True, screen=screens[2])
     windows.append(window3)
+
+    window4 = pyglet.window.Window(fullscreen=True, screen=screens[3])
+    windows.append(window4)
 
     for window in windows:
         if window is not None:
