@@ -105,23 +105,93 @@ canned_faces = [
     "images/startup_face1.png",
     "images/startup_face2.png",
     "images/startup_face3.png",
+    "images/rafd/Rafd090_29_Moroccan_male_neutral_frontal.png",
     "images/yann.png",
     "images/fei_fei.png",
     "images/bengio.jpg",
+    "images/ng.png",
+    "images/Schmidhuber.png",
     "images/kingma.jpg",
     "images/goodfellow.jpg",
-    "images/rafd/Rafd090_29_Moroccan_male_neutral_frontal.png",
     "images/rafd/Rafd090_01_Caucasian_female_neutral_frontal.png",
     "images/rafd/Rafd090_01_Caucasian_female_disgusted_frontal.png",
     "images/rafd/Rafd090_01_Caucasian_female_fearful_frontal.png",
     "images/rafd/Rafd090_01_Caucasian_female_happy_frontal.png",
     "images/rafd/Rafd090_01_Caucasian_female_surprised_frontal.png",
+
+    "images/rafd/Rafd090_02_Caucasian_female_neutral_frontal.png",
+    "images/rafd/Rafd090_03_Caucasian_male_neutral_frontal.png",
+    "images/rafd/Rafd090_04_Caucasian_female_neutral_frontal.png",
+    "images/rafd/Rafd090_05_Caucasian_male_neutral_frontal.png",
+    "images/rafd/Rafd090_07_Caucasian_male_neutral_frontal.png",
+    "images/rafd/Rafd090_08_Caucasian_female_neutral_frontal.png",
+    "images/rafd/Rafd090_09_Caucasian_male_neutral_frontal.png",
+    "images/rafd/Rafd090_10_Caucasian_male_neutral_frontal.png",
+    "images/rafd/Rafd090_11_Kid_female_neutral_frontal.png",
+    "images/rafd/Rafd090_12_Caucasian_female_neutral_frontal.png",
+    "images/rafd/Rafd090_14_Caucasian_female_neutral_frontal.png",
+    "images/rafd/Rafd090_15_Caucasian_male_neutral_frontal.png",
+    "images/rafd/Rafd090_16_Caucasian_female_neutral_frontal.png",
+    "images/rafd/Rafd090_18_Caucasian_female_neutral_frontal.png",
+    "images/rafd/Rafd090_19_Caucasian_female_neutral_frontal.png",
+    "images/rafd/Rafd090_20_Caucasian_male_neutral_frontal.png",
+    "images/rafd/Rafd090_21_Caucasian_male_neutral_frontal.png",
+    "images/rafd/Rafd090_22_Caucasian_female_neutral_frontal.png",
+    "images/rafd/Rafd090_23_Caucasian_male_neutral_frontal.png",
+    "images/rafd/Rafd090_24_Caucasian_male_neutral_frontal.png",
+    "images/rafd/Rafd090_25_Caucasian_male_neutral_frontal.png",
+    "images/rafd/Rafd090_26_Caucasian_female_neutral_frontal.png",
+    "images/rafd/Rafd090_27_Caucasian_female_neutral_frontal.png",
+    "images/rafd/Rafd090_28_Caucasian_male_neutral_frontal.png",
+    "images/rafd/Rafd090_29_Moroccan_male_neutral_frontal.png",
+    "images/rafd/Rafd090_30_Caucasian_male_neutral_frontal.png",
+    "images/rafd/Rafd090_31_Caucasian_female_neutral_frontal.png",
+    "images/rafd/Rafd090_32_Caucasian_female_neutral_frontal.png",
+    "images/rafd/Rafd090_33_Caucasian_male_neutral_frontal.png",
+    "images/rafd/Rafd090_35_Moroccan_male_neutral_frontal.png",
+    "images/rafd/Rafd090_36_Caucasian_male_neutral_frontal.png",
+    "images/rafd/Rafd090_37_Caucasian_female_neutral_frontal.png",
+    "images/rafd/Rafd090_38_Caucasian_male_neutral_frontal.png",
+    "images/rafd/Rafd090_39_Kid_male_neutral_frontal.png",
+    "images/rafd/Rafd090_40_Kid_male_neutral_frontal.png",
+    "images/rafd/Rafd090_41_Kid_female_neutral_frontal.png",
+    "images/rafd/Rafd090_42_Kid_male_neutral_frontal.png",
+    "images/rafd/Rafd090_43_Kid_female_neutral_frontal.png",
+    "images/rafd/Rafd090_44_Kid_female_neutral_frontal.png",
+    "images/rafd/Rafd090_45_Moroccan_male_neutral_frontal.png",
+    "images/rafd/Rafd090_46_Caucasian_male_neutral_frontal.png",
+    "images/rafd/Rafd090_47_Caucasian_male_neutral_frontal.png",
+    "images/rafd/Rafd090_48_Moroccan_male_neutral_frontal.png",
+    "images/rafd/Rafd090_49_Caucasian_male_neutral_frontal.png",
+    "images/rafd/Rafd090_50_Moroccan_male_neutral_frontal.png",
+    "images/rafd/Rafd090_51_Moroccan_male_neutral_frontal.png",
+    "images/rafd/Rafd090_52_Moroccan_male_neutral_frontal.png",
+    "images/rafd/Rafd090_53_Moroccan_male_neutral_frontal.png",
+    "images/rafd/Rafd090_54_Moroccan_male_neutral_frontal.png",
+    "images/rafd/Rafd090_55_Moroccan_male_neutral_frontal.png",
+    "images/rafd/Rafd090_56_Caucasian_female_neutral_frontal.png",
+    "images/rafd/Rafd090_57_Caucasian_female_neutral_frontal.png",
+    "images/rafd/Rafd090_58_Caucasian_female_neutral_frontal.png",
+    "images/rafd/Rafd090_59_Moroccan_male_neutral_frontal.png",
+    "images/rafd/Rafd090_60_Moroccan_male_neutral_frontal.png",
+    "images/rafd/Rafd090_61_Caucasian_female_neutral_frontal.png",
+    "images/rafd/Rafd090_63_Kid_male_neutral_frontal.png",
+    "images/rafd/Rafd090_64_Kid_female_neutral_frontal.png",
+    "images/rafd/Rafd090_65_Kid_female_neutral_frontal.png",
+    "images/rafd/Rafd090_67_Moroccan_male_neutral_frontal.png",
+    "images/rafd/Rafd090_68_Moroccan_male_neutral_frontal.png",
+    "images/rafd/Rafd090_69_Moroccan_male_neutral_frontal.png",
+    "images/rafd/Rafd090_70_Moroccan_male_neutral_frontal.png",
+    "images/rafd/Rafd090_71_Caucasian_male_neutral_frontal.png",
+    "images/rafd/Rafd090_72_Moroccan_male_neutral_frontal.png",
+    "images/rafd/Rafd090_73_Moroccan_male_neutral_frontal.png",
+
 ]
 CANNED_IMAGE_CAMERA_VECTOR_SOURCE = 0
 CANNED_IMAGE_CAMERA_VECTOR_DEST = 1
 CANNED_IMAGE_CAMERA_IMAGE_SOURCE = 2
-CANNED_IMAGE_INITIAL_VECTOR_SOURCE = 9
-CANNED_IMAGE_INITIAL_VECTOR_DEST = 9
+CANNED_IMAGE_INITIAL_VECTOR_SOURCE = 11
+CANNED_IMAGE_INITIAL_VECTOR_DEST = 11
 CANNED_IMAGE_INITIAL_CANNED_FACE = 3
 
 # initialize and return camera handle
@@ -194,6 +264,8 @@ def do_key_press(symbol, modifiers):
                 theApp.cur_vector_source = CANNED_IMAGE_CAMERA_VECTOR_SOURCE
                 theApp.cur_vector_dest = CANNED_IMAGE_CAMERA_VECTOR_DEST
                 theApp.setup_oneshot_camera = True
+    if(symbol == key.T):
+        theApp.show_camera = not theApp.show_camera
     elif(symbol == key.A):
         theApp.arrow_mode = ARROW_MODE_IMAGE_SOURCE
     elif(symbol == key.S):
@@ -223,10 +295,20 @@ def do_key_press(symbol, modifiers):
             theApp.cur_vector_source = canned_face_up(theApp.cur_vector_source)
         theApp.redraw_needed = True;
     elif(symbol == key.LEFT):
-        cur_vector = (cur_vector - 1 + num_vectors) % num_vectors
+        if theApp.app_mode == APP_MODE_ONESHOT:
+            theApp.cur_vector_dest = canned_face_up(theApp.cur_vector_dest)
+        else:
+            cur_vector = (cur_vector - 1 + num_vectors) % num_vectors
         theApp.redraw_needed = True
     elif(symbol == key.RIGHT):
-        cur_vector = (cur_vector + 1) % num_vectors
+        if theApp.app_mode == APP_MODE_ONESHOT:
+            theApp.cur_vector_dest = canned_face_down(theApp.cur_vector_dest)
+        else:
+            cur_vector = (cur_vector + 1) % num_vectors
+        theApp.redraw_needed = True
+    elif(symbol == key._0):
+        cur_vector = 0
+        theApp.cur_canned_face = CANNED_IMAGE_INITIAL_CANNED_FACE
         theApp.redraw_needed = True
     elif(symbol == key.Z):
         # three vectors mode
@@ -360,6 +442,7 @@ class MainApp():
     scale_factor = None
     arrow_mode = ARROW_MODE_IMAGE_SOURCE
     camera_recording = False
+    show_camera = True
     num_steps = 0
     redraw_needed = True
     last_recon_tex = None
@@ -854,7 +937,7 @@ class MainApp():
             # print("{}, {} {}".format(win_width / 2 - width_recon_strip / 2, win_width, width_recon_strip))
             self.last_recon_tex.blit(win_width / 2 - width_recon_strip / 2, 0)
 
-        if show_camera and self.camera_recording and self.cur_camera is not None:
+        if show_camera and self.camera_recording and self.cur_camera is not None and self.show_camera:
             camera_texture = image_to_texture(self.cur_camera)
             camera_texture.blit(0, win_height - cam_height)
 
