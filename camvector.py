@@ -106,6 +106,11 @@ canned_faces = [
     "images/startup_face2.png",
     "images/startup_face3.png",
     "images/rafd/Rafd090_29_Moroccan_male_neutral_frontal.png",
+    "images/rafd/Rafd090_14_Caucasian_female_neutral_frontal.png",
+    "images/rafd/Rafd090_15_Caucasian_male_neutral_frontal.png",
+    "images/rafd/Rafd090_18_Caucasian_female_neutral_frontal.png",
+    "images/rafd/Rafd090_48_Moroccan_male_neutral_frontal.png",
+    "images/rafd/Rafd090_23_Caucasian_male_neutral_frontal.png",
     "images/yann.png",
     "images/fei_fei.png",
     "images/bengio.jpg",
@@ -129,15 +134,11 @@ canned_faces = [
     "images/rafd/Rafd090_10_Caucasian_male_neutral_frontal.png",
     "images/rafd/Rafd090_11_Kid_female_neutral_frontal.png",
     "images/rafd/Rafd090_12_Caucasian_female_neutral_frontal.png",
-    "images/rafd/Rafd090_14_Caucasian_female_neutral_frontal.png",
-    "images/rafd/Rafd090_15_Caucasian_male_neutral_frontal.png",
     "images/rafd/Rafd090_16_Caucasian_female_neutral_frontal.png",
-    "images/rafd/Rafd090_18_Caucasian_female_neutral_frontal.png",
     "images/rafd/Rafd090_19_Caucasian_female_neutral_frontal.png",
     "images/rafd/Rafd090_20_Caucasian_male_neutral_frontal.png",
     "images/rafd/Rafd090_21_Caucasian_male_neutral_frontal.png",
     "images/rafd/Rafd090_22_Caucasian_female_neutral_frontal.png",
-    "images/rafd/Rafd090_23_Caucasian_male_neutral_frontal.png",
     "images/rafd/Rafd090_24_Caucasian_male_neutral_frontal.png",
     "images/rafd/Rafd090_25_Caucasian_male_neutral_frontal.png",
     "images/rafd/Rafd090_26_Caucasian_female_neutral_frontal.png",
@@ -161,7 +162,6 @@ canned_faces = [
     "images/rafd/Rafd090_45_Moroccan_male_neutral_frontal.png",
     "images/rafd/Rafd090_46_Caucasian_male_neutral_frontal.png",
     "images/rafd/Rafd090_47_Caucasian_male_neutral_frontal.png",
-    "images/rafd/Rafd090_48_Moroccan_male_neutral_frontal.png",
     "images/rafd/Rafd090_49_Caucasian_male_neutral_frontal.png",
     "images/rafd/Rafd090_50_Moroccan_male_neutral_frontal.png",
     "images/rafd/Rafd090_51_Moroccan_male_neutral_frontal.png",
@@ -190,8 +190,8 @@ canned_faces = [
 CANNED_IMAGE_CAMERA_VECTOR_SOURCE = 0
 CANNED_IMAGE_CAMERA_VECTOR_DEST = 1
 CANNED_IMAGE_CAMERA_IMAGE_SOURCE = 2
-CANNED_IMAGE_INITIAL_VECTOR_SOURCE = 11
-CANNED_IMAGE_INITIAL_VECTOR_DEST = 11
+CANNED_IMAGE_INITIAL_VECTOR_SOURCE = 16
+CANNED_IMAGE_INITIAL_VECTOR_DEST = 16
 CANNED_IMAGE_INITIAL_CANNED_FACE = 3
 
 # initialize and return camera handle
@@ -296,13 +296,13 @@ def do_key_press(symbol, modifiers):
         theApp.redraw_needed = True;
     elif(symbol == key.LEFT):
         if theApp.app_mode == APP_MODE_ONESHOT:
-            theApp.cur_vector_dest = canned_face_up(theApp.cur_vector_dest)
+            theApp.cur_vector_dest = canned_face_down(theApp.cur_vector_dest)
         else:
             cur_vector = (cur_vector - 1 + num_vectors) % num_vectors
         theApp.redraw_needed = True
     elif(symbol == key.RIGHT):
         if theApp.app_mode == APP_MODE_ONESHOT:
-            theApp.cur_vector_dest = canned_face_down(theApp.cur_vector_dest)
+            theApp.cur_vector_dest = canned_face_up(theApp.cur_vector_dest)
         else:
             cur_vector = (cur_vector + 1) % num_vectors
         theApp.redraw_needed = True
