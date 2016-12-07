@@ -62,6 +62,11 @@ APP_MODE_CLASSIFY = 3
 attribute_decoded_array = None
 oneshot_decoded_array = None
 
+roc_image_resize = 0.55
+roc_image_width = None
+roc_image_height = None
+roc_hist_image_width = None
+
 # images for pre-defined vectors
 vector_files = [
     "images/OneShot.png",
@@ -237,8 +242,10 @@ def do_key_press(symbol, modifiers):
         snapshot(None)
     elif(symbol == key.C):
         # one_shot mode
-        theApp.app_mode = APP_MODE_CLASSIFY
-        theApp.redraw_needed = True
+        if not theApp.gan_mode:
+            theApp.app_mode = APP_MODE_CLASSIFY
+            theApp.do_roc()
+            theApp.redraw_needed = True
     elif(symbol == key.SPACE):
         print("SPACEBAR")
         snapshot(None);
@@ -360,6 +367,10 @@ class MainApp():
     scrot_enabled = False
     window_sizes = None
     cur_camera = None
+    standard_hist_tex = None
+    standard_roc_tex = None
+    cur_hist_tex = None
+    cur_roc_tex = None
 
     """Just a container for unfortunate global state"""
     def __init__(self, window_sizes):
@@ -671,6 +682,30 @@ class MainApp():
             self.camera = shutdown_camera(self.camera_device)
         print("Camera recording is now {}".format(theApp.camera_recording))
 
+    def do_roc(self):
+        if self.gan_mode and self.dmodel2 is not None:
+            dmodel_cur = self.dmodel2
+            scale_factor = 2
+        elif self.dmodel is not None:
+            dmodel_cur = self.dmodel
+            scale_factor = self.scale_factor
+        else:
+            theApp.cur_hist_tex = theApp.standard_hist_tex
+            theApp.cur_roc_tex = theApp.standard_roc_tex
+            return
+        encoded_vector_source = self.get_encoded(dmodel_cur, self.cur_vector_source, scale_factor)
+        encoded_vector_dest = self.get_encoded(dmodel_cur, self.cur_vector_dest, scale_factor)
+        attribute_vector = encoded_vector_dest - encoded_vector_source
+        threshold = None
+        outfile = "{}/{}".format(roc_dir, get_date_str())
+        do_roc(attribute_vector, encoded, attribs, attribute_index, threshold, outfile)
+        hist_img = imread("{}_hist_both.png".format(outfile), mode='RGB')
+        roc_img = imread("{}_roc.png".format(outfile), mode='RGB')
+        hist_img = imresize(hist_img, roc_image_resize)
+        roc_img = imresize(roc_img, roc_image_resize)
+        theApp.cur_hist_tex = image_to_texture(hist_img)
+        theApp.cur_roc_tex = image_to_texture(roc_img)
+
     def step(self, dt):
         if self.cur_frame == 5:
             print("Fake key presses")
@@ -730,6 +765,10 @@ class MainApp():
             pyglet.gl.glClearColor(1, 1, 1, 1)
             cur_vector_textures = self.vector_flip_textures
             show_camera = True
+
+            self.framecount += pyglet.clock.get_fps()
+            self.timecount  += dt
+            self.cur_frame += 1
         else:
             pyglet.gl.glClearColor(0, 0, 0, 1)
             cur_vector_textures = self.vector_textures
@@ -737,6 +776,37 @@ class MainApp():
 
         # clear window only sometimes
         windows[win_num].clear()
+
+        if self.app_mode == APP_MODE_CLASSIFY:
+            if win_num is 0:
+                cur_vector_textures[1].blit(self.vector_x[win_num], 588)
+                cur_vector_textures[0].blit(self.vector_x[win_num], 0)
+                x1 = 520
+                x2 = win_width/2 + 40
+                y1 = 178
+                y2 = win_height/2 + 226
+                source_tex = self.get_small_texture(self.cur_vector_source)
+                source_x, source_y = self.vector_x[win_num] + 176, 0 + 11
+                source_tex.blit(source_x, source_y)
+
+                dest_tex = self.get_small_texture(self.cur_vector_dest)
+                source_x, source_y = self.vector_x[win_num] + 688, 0 + 11
+                dest_tex.blit(source_x, source_y)
+            else:
+                x1 = 100
+                x2 = 600
+                y1 = 50
+                y2 = 500
+
+            if self.standard_hist_tex is not None:
+                self.standard_hist_tex.blit(x1, y2)
+            if self.standard_roc_tex is not None:
+                self.standard_roc_tex.blit(x2, y2)
+            if self.cur_hist_tex is not None:
+                self.cur_hist_tex.blit(x1, y1)
+            if self.cur_roc_tex is not None:
+                self.cur_roc_tex.blit(x2, y1)
+            return
 
         align_im = theApp.canned_aligned[theApp.cur_canned_face]
 
@@ -746,7 +816,7 @@ class MainApp():
             vector_index = 0
         cur_vector_textures[vector_index].blit(self.vector_x[win_num], self.vector_y[win_num])
 
-        if self.app_mode == APP_MODE_ONESHOT:
+        if self.app_mode != APP_MODE_ATTRIBUTE:
             source_tex = self.get_small_texture(self.cur_vector_source)
             source_x, source_y = self.vector_x[win_num] + 176, self.vector_y[win_num] + 11
             source_tex.blit(source_x, source_y)
@@ -787,13 +857,6 @@ class MainApp():
         if show_camera and self.camera_recording and self.cur_camera is not None:
             camera_texture = image_to_texture(self.cur_camera)
             camera_texture.blit(0, win_height - cam_height)
-        # if self.debug_outputs:
-        #     self.write_last_aligned(debugfile=True)
-
-        self.framecount += pyglet.clock.get_fps()
-        self.timecount  += dt
-        self.cur_frame += 1
-        return
 
     def draw_oneshot_small(self, vector_y, source_tex, dest_tex, win_num):
         self.small_vector_textures[0].blit(self.small_vector_x[win_num], vector_y)
@@ -808,7 +871,7 @@ class MainApp():
         windows[win_num].clear()
         global win2_aligned_im, win2_smile_im, win2_surprised_im, win2_angry_im
         global win2_oneshot_a1, win2_oneshot_a2, win2_oneshot_b1, win2_oneshot_b2, win2_oneshot_c1, win2_oneshot_c2
-        if self.app_mode == APP_MODE_ONESHOT:
+        if self.app_mode != APP_MODE_ATTRIBUTE:
             if win2_oneshot_a1 is not None:
                 oneshot_tex = image_to_texture(win2_oneshot_a1)
                 oneshot_tex.blit(0, win_height-256)
@@ -863,7 +926,7 @@ def step(dt):
             if windows[i] != None:
                 windows[i].switch_to()
                 theApp.draw_functions[i](dt, i)
-        if theApp.num_steps % 300 == 0:
+        if theApp.num_steps % 150 == 0:
             snapshot(dt)
     except Exception as e:
         print("BAD PROGRAM: step caught {}".format(e))
@@ -1018,8 +1081,16 @@ if __name__ == "__main__":
         chosen_vector = vector_offsets[1]
         dim = len(chosen_vector)
         threshold = None
-        outfile = "{}/{}.png".format(roc_dir, get_date_str())
+        outfile = "{}/{}".format(roc_dir, get_date_str())
         do_roc(chosen_vector, encoded, attribs, attribute_index, threshold, outfile)
+        hist_img = imread("{}_hist_both.png".format(outfile), mode='RGB')
+        roc_img = imread("{}_roc.png".format(outfile), mode='RGB')
+        hist_img = imresize(hist_img, roc_image_resize)
+        roc_img = imresize(roc_img, roc_image_resize)
+        roc_image_height, roc_hist_image_width, chan = hist_img.shape
+        roc_image_height, roc_image_width, chan = roc_img.shape
+        theApp.standard_hist_tex = image_to_texture(hist_img)
+        theApp.standard_roc_tex = image_to_texture(roc_img)
 
     if args.debug_outputs:
         theApp.setDebugOutputs(args.debug_outputs)
