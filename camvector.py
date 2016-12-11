@@ -457,6 +457,8 @@ class MainApp():
 
     """Just a container for unfortunate global state"""
     def __init__(self, window_sizes):
+        global canned_faces
+
         self.window_sizes = window_sizes
         self.cur_frame = 0
         self.vector_textures = []
@@ -524,14 +526,21 @@ class MainApp():
         self.canned_textures = []
         self.canned_small_textures = []
         self.canned_smaller_textures = []
+        actual_canned_faces = []
         self.num_canned = len(canned_faces)
         for i in range(self.num_canned):
-            canned_face = imread(canned_faces[i], mode='RGB')
-            self.canned_aligned.append(get_aligned(canned_face))
-            self.canned_encoded.append(None)
-            self.canned_textures.append(None)
-            self.canned_small_textures.append(None)
-            self.canned_smaller_textures.append(None)
+            try:
+                canned_face = imread(canned_faces[i], mode='RGB')
+                actual_canned_faces.append(canned_faces[i])
+                self.canned_aligned.append(get_aligned(canned_face))
+                self.canned_encoded.append(None)
+                self.canned_textures.append(None)
+                self.canned_small_textures.append(None)
+                self.canned_smaller_textures.append(None)
+            except IOError:
+                print("File not found, skipped: {}".format(canned_faces[i]))
+        canned_faces = actual_canned_faces
+        self.num_canned = len(canned_faces)
 
     def setDebugOutputs(self, mode):
         self.debug_outputs = mode
@@ -1031,9 +1040,9 @@ def snapshot(dt):
         theApp.write_oneshot_sixpack(datestr)
 
 window_sizes = [
-    [1920, 1080],
-    [1920, 1080],
-    [1280, 800],
+    # [1920, 1080],
+    # [1920, 1080],
+    # [1280, 800],
     [1280, 800],
 ]
 theApp = MainApp(window_sizes)
@@ -1103,24 +1112,24 @@ if __name__ == "__main__":
     elif args.full1 is not None:
         window1 = pyglet.window.Window(fullscreen=True, screen=screens[args.full1])
     else:
-        window1 = pyglet.window.Window(win_width[0], win_height[0], resizable=False)
+        window1 = pyglet.window.Window(window_sizes[0][0], window_sizes[0][1], resizable=False)
         # window1.set_location(0, 0)
     windows.append(window1)
 
-    if args.skip2:
-        window2 = None
-    elif args.full2 is not None:
-        window2 = pyglet.window.Window(fullscreen=True, screen=screens[args.full2])
-    else:
-        window2 = pyglet.window.Window(win_width[1], win_height[1], resizable=False)
-        # window2.set_location(100, 100)
-    windows.append(window2)
+    # if args.skip2:
+    #     window2 = None
+    # elif args.full2 is not None:
+    #     window2 = pyglet.window.Window(fullscreen=True, screen=screens[args.full2])
+    # else:
+    #     window2 = pyglet.window.Window(win_width[1], win_height[1], resizable=False)
+    #     # window2.set_location(100, 100)
+    # windows.append(window2)
 
-    window3 = pyglet.window.Window(fullscreen=True, screen=screens[2])
-    windows.append(window3)
+    # window3 = pyglet.window.Window(fullscreen=True, screen=screens[2])
+    # windows.append(window3)
 
-    window4 = pyglet.window.Window(fullscreen=True, screen=screens[3])
-    windows.append(window4)
+    # window4 = pyglet.window.Window(fullscreen=True, screen=screens[3])
+    # windows.append(window4)
 
     for window in windows:
         if window is not None:
