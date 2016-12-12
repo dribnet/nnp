@@ -72,7 +72,7 @@ def shutdown_camera(device_number):
 def get_camera_image(camera):
     retval, img = camera.read()
     img = cv2.flip(img, 1)
-    # img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+    img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
     return img
 
 # convert an RGB image to a pyglet texture for display
@@ -126,7 +126,7 @@ def do_key_press(symbol, modifiers):
 def get_date_str():
     return datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
 
-pipeline_dir = "pipeline/{}".format(get_date_str())
+pipeline_dir = "fitpipe/{}".format(get_date_str())
 os.makedirs(pipeline_dir)
 camera_dir = "{}/camera".format(pipeline_dir)
 aligned_dir = "{}/aligned".format(pipeline_dir)
@@ -314,7 +314,6 @@ class MainApp():
 
         cur_time = time.time()
         if cur_time - theApp.last_camera> theApp.camera_every:
-            print("Camera time")
             theApp.last_camera = cur_time
             if theApp.use_camera:
                 theApp.set_camera_recording(True)
@@ -324,6 +323,7 @@ class MainApp():
                     if candidate is not None:
                         theApp.redraw_needed = True
                         theApp.last_aligned = candidate
+                        self.write_cur_aligned()
                 theApp.set_camera_recording(False)
 
     def draw_grid(self, dt, win_num):
@@ -352,7 +352,23 @@ class MainApp():
             aligned_tex = image_to_texture(self.last_aligned)
             aligned_tex.blit(0, 0)
 
+    def write_cur_aligned(self, debugfile=False, datestr=None):
+        if debugfile:
+            datestr = "debug"
+        elif datestr is None:
+            datestr = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
 
+        if self.last_aligned is not None:
+            filename = "{}/{}.png".format(aligned_dir,datestr)
+            if not debugfile and os.path.exists(filename):
+                return
+            imsave(filename, theApp.last_aligned)
+
+        if self.cur_camera is not None:
+            filename = "{}/{}.png".format(camera_dir, datestr)
+            if not debugfile and os.path.exists(filename):
+                return
+            imsave(filename, self.cur_camera)
 
 def step(dt):
     global windows
@@ -377,7 +393,7 @@ def snapshot(dt):
     # print("SNAPSHOT: saving")
 
     datestr = get_date_str()
-    # theApp.write_cur_aligned(datestr=datestr)
+    theApp.write_cur_aligned(datestr=datestr)
     if theApp.scrot_enabled:
         print("SCROT RUNNING")
         theApp.write_cur_scrot(datestr=datestr)
@@ -482,9 +498,22 @@ if __name__ == "__main__":
     theApp.model_name = args.model
     theApp.model_name2 = args.model2
 
-    for i in range(1):
-        path = "paths/nips{}".format(random.randint(1,4))
-        sequences.append(SequenceDir(path))    
+    possible = [
+        "fitpipe/20161212_180402/resized/20161212_180806",
+        "fitpipe/20161212_180402/resized/20161212_182411",
+        "fitpipe/20161212_180402/resized/20161212_190023",
+        "fitpipe/20161212_191248/resized/20161212_191701",
+        "fitpipe/20161212_191248/resized/20161212_192303",
+        "fitpipe/20161212_191248/resized/20161212_192443",
+        "paths/nips1", 
+        "paths/nips2", 
+        "paths/nips3", 
+        "paths/nips4", 
+        ]
+
+
+    for i in range(40):
+        sequences.append(SequenceDir(random.choice(possible)))
 
     # sequences.append(SequenceDir("paths/nips1"))
     # sequences.append(SequenceDir("paths/nips2"))
