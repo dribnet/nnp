@@ -11,6 +11,7 @@ import argparse
 import datetime
 import random
 import sys
+import time
 import os
 from plat.utils import offset_from_string, vectors_from_json_filelist, json_list_to_array
 from plat.bin.atvec import do_roc
@@ -32,12 +33,12 @@ theApp = None
 windows = []
 
 # camera settings
-# cam_width = 720
-# cam_height = 512
+cam_width = 720
+cam_height = 512
 # cam_width = 400
 # cam_height = 300
-cam_width = 560
-cam_height = 360
+# cam_width = 560
+# cam_height = 360
 
 # constants - arrow up/down mode
 ARROW_MODE_VECTOR_SOURCE = 1
@@ -58,10 +59,10 @@ roc_hist_image_width = None
 
 # initialize and return camera handle
 def setup_camera(device_number):
-    cam = cv2.VideoCapture('videos/test1.mp4')
+    cam = cv2.VideoCapture(device_number)
     # result1 = cam.set(cv2.CAP_PROP_FRAME_WIDTH,cam_width)
     # result2 = cam.set(cv2.CAP_PROP_FRAME_HEIGHT,cam_height)
-    # result3 = cam.set(cv2.CAP_PROP_FPS,1)
+    result3 = cam.set(cv2.CAP_PROP_FPS,1)
     return cam
 
 def shutdown_camera(device_number):
@@ -102,13 +103,6 @@ def encode_from_image(rawim, dmodel, scale_factor=None):
 # value mapping utility
 def pr_map(value, istart, istop, ostart, ostop):
     return ostart + (ostop - ostart) * ((value - istart) / float(istop - istart));
-
-# helper functions to handle arrow key presses in various modes
-def canned_face_up(cur_index):
-    return (cur_index + 1) % len(canned_faces)
-
-def canned_face_down(cur_index):
-    return (cur_index - 1 + len(canned_faces)) % len(canned_faces)
 
 # big nasty switch statement of keypress
 def do_key_press(symbol, modifiers):
@@ -277,11 +271,14 @@ class MainApp():
     standard_roc_tex = None
     cur_hist_tex = None
     cur_roc_tex = None
+    last_aligned = None
+    snapshot_every = 600
+    camera_every = 20
+    last_snapshot = 0
+    last_camera = 0
 
     """Just a container for unfortunate global state"""
     def __init__(self, window_sizes):
-        global canned_faces
-
         self.window_sizes = window_sizes
         self.cur_frame = 0
 
@@ -299,10 +296,11 @@ class MainApp():
     def set_camera_recording(self, state):
         theApp.camera_recording = state
         if (theApp.camera_recording):
+            theApp.last_aligned = None
             self.camera = setup_camera(self.camera_device)
         else:
             self.camera = shutdown_camera(self.camera_device)
-        print("Camera recording is now {}".format(theApp.camera_recording))
+        print("Camera recording {} is now {}".format(self.camera_device, self.camera_recording))
 
     def step(self, dt):
         if self.cur_frame == 5:
@@ -314,17 +312,19 @@ class MainApp():
             # do_key_press(key.G, None)
             # do_key_press(key.LEFT, None)
 
-        if self.camera is not None and theApp.camera_recording:
-            self.cur_camera = get_camera_image(self.camera)
-            candidate = get_aligned(self.cur_camera)
-            if candidate is not None:
-                theApp.redraw_needed = True
-                # if theApp.setup_oneshot_camera:
-                #     theApp.canned_aligned[CANNED_IMAGE_CAMERA_VECTOR_SOURCE] = candidate
-                #     theApp.canned_aligned[CANNED_IMAGE_CAMERA_VECTOR_DEST] = candidate
-                #     theApp.setup_oneshot_camera = False
-                theApp.canned_aligned[face_index] = candidate
-                # theApp.clear_cached_encoded_and_textures(face_index)
+        cur_time = time.time()
+        if cur_time - theApp.last_camera> theApp.camera_every:
+            print("Camera time")
+            theApp.last_camera = cur_time
+            if theApp.use_camera:
+                theApp.set_camera_recording(True)
+                if self.camera is not None and theApp.camera_recording:
+                    self.cur_camera = get_camera_image(self.camera)
+                    candidate = get_aligned(self.cur_camera)
+                    if candidate is not None:
+                        theApp.redraw_needed = True
+                        theApp.last_aligned = candidate
+                theApp.set_camera_recording(False)
 
     def draw_grid(self, dt, win_num):
         global windows, cur_vector
@@ -344,17 +344,29 @@ class MainApp():
         global windows, cur_vector
         win_width, win_height = self.window_sizes[win_num]
 
+        if self.cur_camera is not None and self.show_camera:
+            camera_texture = image_to_texture(self.cur_camera)
+            camera_texture.blit(0, win_height - cam_height)
+
+        if self.last_aligned is not None:
+            aligned_tex = image_to_texture(self.last_aligned)
+            aligned_tex.blit(0, 0)
+
+
 
 def step(dt):
     global windows
+    cur_time = time.time()
     try:
         theApp.step(dt)
         for i in range(len(windows)):
             if windows[i] != None:
                 windows[i].switch_to()
                 theApp.draw_functions[i](dt, i)
-        if theApp.num_steps % 150 == 0:
+        if cur_time - theApp.last_snapshot > theApp.snapshot_every:
             snapshot(dt)
+            theApp.last_snapshot = cur_time
+
     except IOError as e:
         print("BAD PROGRAM: step caught {}".format(e))
 
@@ -378,7 +390,7 @@ window_sizes = [
     # [1920, 1080],
     # [1920, 1080],
     # [1280, 800],
-    [640, 480],
+    [1000, 800],
     [1280, 800],
 ]
 theApp = MainApp(window_sizes)
@@ -470,7 +482,7 @@ if __name__ == "__main__":
     theApp.model_name = args.model
     theApp.model_name2 = args.model2
 
-    for i in range(40):
+    for i in range(1):
         path = "paths/nips{}".format(random.randint(1,4))
         sequences.append(SequenceDir(path))    
 
