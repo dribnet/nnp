@@ -132,13 +132,11 @@ camera_dir = "{}/camera".format(pipeline_dir)
 aligned_dir = "{}/aligned".format(pipeline_dir)
 plat_dir = "{}/plat".format(pipeline_dir)
 enhanced_dir = "{}/enhanced".format(pipeline_dir)
-atstrip2_dir = "{}/atstrip2".format(pipeline_dir)
 scrot_dir = "{}/scrot".format(pipeline_dir)
 os.makedirs(camera_dir)
 os.makedirs(aligned_dir)
 os.makedirs(plat_dir)
 os.makedirs(enhanced_dir)
-os.makedirs(atstrip2_dir)
 os.makedirs(scrot_dir)
 
 # PLAT: ALIGNED -> PLAT
@@ -164,18 +162,6 @@ with open("enhance.sh", "w+") as text_file:
 
 # p=subprocess.Popen(command, shell=True)
 
-# global images that get displayed on win2
-win2_aligned_im = None
-win2_smile_im = None
-win2_surprised_im = None
-win2_angry_im = None
-win2_oneshot_a1 = None
-win2_oneshot_a2 = None
-win2_oneshot_b1 = None
-win2_oneshot_b2 = None
-win2_oneshot_c1 = None
-win2_oneshot_c2 = None
-
 sequences = []
 
 class SequenceDir():
@@ -184,7 +170,7 @@ class SequenceDir():
         self.x = 0
         self.y = 0
         self.frames = []
-        files = sorted(real_glob("{}/*.jpg".format(directory)))
+        files = sorted(real_glob("{}/*.{{jpg,png}}".format(directory)))
         num_files = len(files)
         print("There are {} files in {}".format(num_files, directory))
         if min_index == None:
@@ -214,33 +200,31 @@ class InputFileHandler(FileSystemEventHandler):
     last_processed = None
 
     def process(self, infile):
-        global win2_aligned_im, win2_smile_im, win2_surprised_im, win2_angry_im
-        global win2_oneshot_a1, win2_oneshot_a2, win2_oneshot_b1, win2_oneshot_b2, win2_oneshot_c1, win2_oneshot_c2
-        # basename = os.path.basename(infile)
-        # if basename[0] == '.' or basename[0] == '_':
-        #     print("Skipping infile: {}".format(infile))
-        #     return;
+        if theApp is None:
+            print("Can't yet process {}, no app".format(infile))
+
+        basename = os.path.basename(infile)
+        if basename[0] == '.' or basename[0] == '_' or not basename.endswith(".png"):
+            print("Skipping infile: {}".format(infile))
+            return;
+
+        # oh so brittle file name parsing. don't go changing anything
+        seq_len = int(basename[-7:-4])
+        cur_frame = int(basename[-11:-8])
+
+        if seq_len != cur_frame + 1:
+            print("Skipping non-final infile: {}".format(infile))
+            return;
+
         if infile == self.last_processed:
             print("Skipping duplicate infile: {}".format(infile))
+            return;
         else:
             print("Processing infile: {}".format(infile))
             self.last_processed = infile
 
-        img = imread(infile, mode='RGB')
-        if infile.endswith("attrib.png"):
-            win2_smile_im = img[0:256,0:256,0:3]
-            win2_surprised_im = img[0:256,256:512,0:3]
-            win2_angry_im = img[0:256,512:768,0:3]
-            win2_aligned_im = img[0:256,768:1024,0:3]
-        else: # ends with oneshot.png
-            win2_oneshot_a1 = img[0:256,0:256,0:3]
-            win2_oneshot_a2 = img[0:256,256:512,0:3]
-            win2_oneshot_b1 = img[0:256,512:768,0:3]
-            win2_oneshot_b2 = img[0:256,768:1024,0:3]
-            win2_oneshot_c1 = img[0:256,1024:1280,0:3]
-            win2_oneshot_c2 = img[0:256,1280:1536,0:3]
-        # if theApp is not None:
-        #     draw2(None)
+        dir_name = os.path.dirname(infile)
+        theApp.current_sequence = SequenceDir(dir_name)
 
     def on_modified(self, event):
         if not event.is_directory:
@@ -248,7 +232,7 @@ class InputFileHandler(FileSystemEventHandler):
 
 event_handler = InputFileHandler()
 observer = Observer()
-observer.schedule(event_handler, path=atstrip2_dir, recursive=False)
+observer.schedule(event_handler, path=enhanced_dir, recursive=True)
 observer.start()
 
 class MainApp():
@@ -278,20 +262,27 @@ class MainApp():
     scrot_enabled = False
     window_sizes = None
     cur_camera = None
+    cur_camera_tex = None
     standard_hist_tex = None
     standard_roc_tex = None
     cur_hist_tex = None
     cur_roc_tex = None
     last_aligned = None
+    last_aligned_tex = None
+    current_sequence = None
+    main_screen_dirty = True
     snapshot_every = 600
     camera_every = 20
     last_snapshot = 0
     last_camera = 0
+    unknown_person_tex = None
 
     """Just a container for unfortunate global state"""
     def __init__(self, window_sizes):
         self.window_sizes = window_sizes
         self.cur_frame = 0
+        img = imread("images/unknown_face.png", mode='RGB')
+        self.unknown_person_tex = image_to_texture(img)
 
     def setDebugOutputs(self, mode):
         self.debug_outputs = mode
@@ -307,7 +298,6 @@ class MainApp():
     def set_camera_recording(self, state):
         theApp.camera_recording = state
         if (theApp.camera_recording):
-            theApp.last_aligned = None
             self.camera = setup_camera(self.camera_device)
         else:
             self.camera = shutdown_camera(self.camera_device)
@@ -327,13 +317,18 @@ class MainApp():
         if cur_time - theApp.last_camera> theApp.camera_every:
             theApp.last_camera = cur_time
             if theApp.use_camera:
+                theApp.last_aligned = None
+                theApp.main_screen_dirty = True
                 theApp.set_camera_recording(True)
                 if self.camera is not None and theApp.camera_recording:
                     self.cur_camera = get_camera_image(self.camera)
+                    self.cur_camera_tex = image_to_texture(self.cur_camera)
                     candidate = get_aligned(self.cur_camera)
                     if candidate is not None:
                         theApp.redraw_needed = True
+                        theApp.current_sequence = None
                         theApp.last_aligned = candidate
+                        theApp.last_aligned_tex = image_to_texture(theApp.last_aligned)
                         self.write_cur_aligned()
                 theApp.set_camera_recording(False)
 
@@ -352,16 +347,26 @@ class MainApp():
                     s.draw()
 
     def draw_photobooth(self, dt, win_num):
+        if self.main_screen_dirty == False:
+            return
+
+        # self.main_screen_dirty = False
+        # print("Drawing main screen")
         global windows, cur_vector
         win_width, win_height = self.window_sizes[win_num]
 
         if self.cur_camera is not None and self.show_camera:
-            camera_texture = image_to_texture(self.cur_camera)
-            camera_texture.blit(0, win_height - cam_height)
+            self.cur_camera_tex.blit(0, win_height - cam_height)
 
         if self.last_aligned is not None:
-            aligned_tex = image_to_texture(self.last_aligned)
-            aligned_tex.blit(0, 0)
+            aligned_tex = self.last_aligned_tex
+        else:
+            aligned_tex = self.unknown_person_tex
+        aligned_tex.blit(0, 0)
+
+        if self.current_sequence is not None:
+            self.current_sequence.move_to(300, 0)
+            self.current_sequence.draw()
 
     def write_cur_aligned(self, debugfile=False, datestr=None):
         if debugfile:
