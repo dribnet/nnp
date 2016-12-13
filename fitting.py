@@ -177,7 +177,7 @@ class SequenceDir():
             min_index = 0
         if max_index == None:
             max_index = num_files
-        for i in range(min_index, max_index, 3):
+        for i in range(min_index, max_index):
             f = files[i]
             img = imread(f, mode='RGB')
             self.frames.append(image_to_texture(img))
@@ -224,7 +224,8 @@ class InputFileHandler(FileSystemEventHandler):
             self.last_processed = infile
 
         dir_name = os.path.dirname(infile)
-        theApp.current_sequence = SequenceDir(dir_name)
+        theApp.next_sequence = None
+        theApp.next_sequence = SequenceDir(dir_name)
 
     def on_modified(self, event):
         if not event.is_directory:
@@ -270,6 +271,7 @@ class MainApp():
     last_aligned = None
     last_aligned_tex = None
     current_sequence = None
+    next_sequence = None
     main_screen_dirty = True
     snapshot_every = 600
     camera_every = 20
@@ -363,6 +365,11 @@ class MainApp():
         else:
             aligned_tex = self.unknown_person_tex
         aligned_tex.blit(0, 0)
+
+        # I think we only want to throw away glTextures from this thread
+        if self.next_sequence is not None:
+            self.current_sequence = None
+            self.current_sequence = self.next_sequence
 
         if self.current_sequence is not None:
             self.current_sequence.move_to(300, 0)
