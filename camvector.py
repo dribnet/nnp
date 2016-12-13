@@ -393,6 +393,7 @@ class InputFileHandler(FileSystemEventHandler):
         #     return;
         if infile == self.last_processed:
             print("Skipping duplicate infile: {}".format(infile))
+            return
         else:
             print("Processing infile: {}".format(infile))
             self.last_processed = infile

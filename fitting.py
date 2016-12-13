@@ -130,16 +130,26 @@ pipeline_dir = "fitpipe/{}".format(get_date_str())
 os.makedirs(pipeline_dir)
 camera_dir = "{}/camera".format(pipeline_dir)
 aligned_dir = "{}/aligned".format(pipeline_dir)
-atstrip1_dir = "{}/atstrip1".format(pipeline_dir)
+plat_dir = "{}/plat".format(pipeline_dir)
+enhanced_dir = "{}/enhanced".format(pipeline_dir)
 atstrip2_dir = "{}/atstrip2".format(pipeline_dir)
-roc_dir = "{}/roc".format(pipeline_dir)
 scrot_dir = "{}/scrot".format(pipeline_dir)
 os.makedirs(camera_dir)
 os.makedirs(aligned_dir)
-os.makedirs(atstrip1_dir)
+os.makedirs(plat_dir)
+os.makedirs(enhanced_dir)
 os.makedirs(atstrip2_dir)
-os.makedirs(roc_dir)
 os.makedirs(scrot_dir)
+
+# PLAT: ALIGNED -> PLAT
+command = "(cd ../plat && CUDA_VISIBLE_DEVICES=0 \
+    INROOT=../nips16_neural_puppet/{} \
+    OUTROOT=../nips16_neural_puppet/{} \
+    ./run_fit.sh)".format(aligned_dir, plat_dir)
+with open("plat.sh", "w+") as text_file:
+    text_file.write(command)
+
+# ENANCE: PLAT -> ENHANCED
 command = "CUDA_VISIBLE_DEVICES=1 \
 /usr/local/anaconda2/envs/enhance/bin/python \
     ../neural-enhance3/enhance.py --model dlib_256_neupup1 --zoom 1 \
@@ -148,9 +158,10 @@ command = "CUDA_VISIBLE_DEVICES=1 \
     --rendering-overlap 1 \
     --input-directory {} \
     --output-directory {} \
-    --watch".format(atstrip1_dir, atstrip2_dir)
+    --watch".format(plat_dir, enhanced_dir)
 with open("enhance.sh", "w+") as text_file:
     text_file.write(command)
+
 # p=subprocess.Popen(command, shell=True)
 
 # global images that get displayed on win2
@@ -512,7 +523,7 @@ if __name__ == "__main__":
         ]
 
 
-    for i in range(40):
+    for i in range(4):
         sequences.append(SequenceDir(random.choice(possible)))
 
     # sequences.append(SequenceDir("paths/nips1"))
