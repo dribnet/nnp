@@ -132,11 +132,13 @@ camera_dir = "{}/camera".format(pipeline_dir)
 aligned_dir = "{}/aligned".format(pipeline_dir)
 plat_dir = "{}/plat".format(pipeline_dir)
 enhanced_dir = "{}/enhanced".format(pipeline_dir)
+sequence_dir = "{}/sequence".format(pipeline_dir)
 scrot_dir = "{}/scrot".format(pipeline_dir)
 os.makedirs(camera_dir)
 os.makedirs(aligned_dir)
 os.makedirs(plat_dir)
 os.makedirs(enhanced_dir)
+os.makedirs(sequence_dir)
 os.makedirs(scrot_dir)
 
 # PLAT: ALIGNED -> PLAT
@@ -163,8 +165,11 @@ with open("enhance.sh", "w+") as text_file:
 # p=subprocess.Popen(command, shell=True)
 
 sequences = []
+new_sequences = []
 
 class SequenceDir():
+    is_valid = True
+
     """Just a container for unfortunate global state"""
     def __init__(self, directory, offset=None, min_index=None, max_index=None):
         self.x = 0
@@ -173,6 +178,9 @@ class SequenceDir():
         files = sorted(real_glob("{}/*.{{jpg,png}}".format(directory)))
         num_files = len(files)
         print("There are {} files in {}".format(num_files, directory))
+        if num_files == 0:
+            self.is_valid = False
+            return
         if min_index == None:
             min_index = 0
         if max_index == None:
@@ -192,8 +200,24 @@ class SequenceDir():
         self.y = y
 
     def draw(self):
+        if not self.is_valid:
+            return
         self.frames[self.cur_frame].blit(self.x, self.y)
         self.cur_frame = (self.cur_frame + 1) % self.num_frames
+
+def convert_and_process(indir):
+    global new_sequences
+    identifier = os.path.basename(indir)
+    print("Conerting {}".format(identifier))
+    outdir = "{}/{}".format(sequence_dir, identifier)
+    os.makedirs(outdir)
+    command = "mogrify -format jpg -resize 160x160 -path {} {}/*.png".format(outdir, indir)
+    print("Running {}".format(command))
+    os.system(command)
+    command = "cp ../plat/latents/{}.json {}/.".format(identifier, outdir)
+    os.system(command)
+    newSeq = SequenceDir(outdir)
+    new_sequences.append(newSeq)
 
 # watcher to load win2 images on filesystem change
 class InputFileHandler(FileSystemEventHandler):
@@ -226,6 +250,8 @@ class InputFileHandler(FileSystemEventHandler):
         dir_name = os.path.dirname(infile)
         theApp.next_sequence = None
         theApp.next_sequence = SequenceDir(dir_name)
+
+        convert_and_process(dir_name)
 
     def on_modified(self, event):
         if not event.is_directory:
@@ -306,6 +332,8 @@ class MainApp():
         print("Camera recording {} is now {}".format(self.camera_device, self.camera_recording))
 
     def step(self, dt):
+        global sequences, new_sequences
+
         if self.cur_frame == 5:
             print("Fake key presses")
             # do_key_press(key.LEFT, None)
@@ -314,6 +342,13 @@ class MainApp():
             print("Fake key presses")
             # do_key_press(key.G, None)
             # do_key_press(key.LEFT, None)
+
+        # this moves sequences over in a sane way
+        process_queue = new_sequences
+        new_sequences = []
+        all_seq = sequences + process_queue
+        # keep last 40
+        sequences = all_seq[-40:]
 
         cur_time = time.time()
         if cur_time - theApp.last_camera> theApp.camera_every:
@@ -335,7 +370,7 @@ class MainApp():
                 theApp.set_camera_recording(False)
 
     def draw_grid(self, dt, win_num):
-        global windows, cur_vector
+        global windows, cur_vector, sequences
         win_width, win_height = self.window_sizes[win_num]
 
         cur_index = 0
@@ -439,7 +474,6 @@ theApp.draw_functions = [
 ]
 
 if __name__ == "__main__":
-
     # argparse
     parser = argparse.ArgumentParser(description='Let get NIPSy')
     parser.add_argument("--model", dest='model', type=str, default=None,
@@ -535,8 +569,8 @@ if __name__ == "__main__":
         ]
 
 
-    for i in range(4):
-        sequences.append(SequenceDir(random.choice(possible)))
+    # for i in range(4):
+    #     sequences.append(SequenceDir(random.choice(possible)))
 
     # sequences.append(SequenceDir("paths/nips1"))
     # sequences.append(SequenceDir("paths/nips2"))
