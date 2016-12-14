@@ -191,7 +191,7 @@ class SequenceDir():
     retired_s = False
     retired_d = False
     latent = None
-    num_anim_frames = 4
+    num_anim_frames = 12
     cur_keyframe = 0
     num_keyframes = 1
 
@@ -260,19 +260,20 @@ class SequenceDir():
             self.d_cur_frame += 1
         return cur
 
+    def step_keyframe(self):
+        self.cur_keyframe = (self.cur_keyframe + 1) % self.num_keyframes
+
     def draw(self, is_s):
         if not self.is_valid:
             return
         x, y = self.step_pos(is_s)
         self.frames[self.cur_keyframe].blit(x, y)
-        self.cur_keyframe = (self.cur_keyframe + 1) % self.num_keyframes
 
     # used only by photobooth window
     def manual_draw(self, x, y):
         if not self.is_valid:
             return
         self.frames[self.cur_keyframe].blit(x, y)
-        self.cur_keyframe = (self.cur_keyframe + 1) % self.num_keyframes
 
 def convert_and_process(indir):
     global new_sequences
@@ -373,7 +374,7 @@ class MainApp():
     last_snapshot = 0
     last_camera = 0
     last_epoch = 0
-    epoch_every = 3
+    epoch_every = 10
     unknown_person_tex = None
 
     """Just a container for unfortunate global state"""
@@ -414,6 +415,9 @@ class MainApp():
             # do_key_press(key.G, None)
             # do_key_press(key.LEFT, None)
 
+        # move the keyframe in step
+        for s in sequences:
+            s.step_keyframe()
         # this moves sequences over in a sane way
         # process_queue = new_sequences
         # new_sequences = []
@@ -446,12 +450,10 @@ class MainApp():
             self.process_epoch()
 
     stable_rand_zs = np.random.normal(loc=0, scale=1, size=(30, 160))
-    max_same_showing = 26
+    max_same_showing = 24
 
     def process_layouts(self, next_s):
         global sequences
-        # TODO: this should do s and d (currently s only)
-        vectors_list = []
 
         # turn off formerly retired entries
         for s in sequences:
@@ -459,8 +461,11 @@ class MainApp():
                 s.in_s = False
             if s.retired_d:
                 s.in_d = False
+
         # prune out entries not in either layout
+        old_len = len(sequences)
         sequences = [s for s in sequences if s.in_s or s.in_d]
+        print("Sequenced trimmed from {} to {}".format(old_len, len(sequences)))
 
         # now do the same sequence
         s_sequences = [s for s in sequences if s.in_s]
@@ -489,6 +494,7 @@ class MainApp():
             s_sequences = [s for s in s_sequences if not s.retired_s]
             num_seq = len(s_sequences)
 
+        vectors_list = []
         for i in range(num_seq):
             vectors_list.append(s_sequences[i].latent)
         # put random (blank) entries at the end
@@ -518,6 +524,65 @@ class MainApp():
                     s = s_sequences[cur_index]
                     s.move_to(True, cur_x * 160, cur_y * 160)
 
+        #### BIG NASTY CUT AND PASTE BELOW.
+        #### WHAT A BAD PROGRAMMER I AM
+        # now do the diff sequence
+        s_sequences = [s for s in sequences if s.in_d]
+        num_seq = len(s_sequences)
+        print("Processing {} different entries".format(num_seq))
+        # if there are too many, retire the one furthest away
+        if num_seq == self.max_same_showing + 1:
+            furthest_dist = None
+            furthest_index = 0
+            new_point = next_s.latent
+            # note: we don't want to kick out the last one (on-deck)
+            # so range is not self.max_same_showing + 1 as expected
+            for i in range(self.max_same_showing):
+                s = s_sequences[i]
+                dist = np.linalg.norm(s.latent - new_point)
+                # print("dist {} is {}".format(i, dist))
+                if furthest_dist is None or dist < furthest_dist:
+                    # print("Saving as {}".format(i))
+                    furthest_dist = dist
+                    furthest_index = i
+            print("Retiring index {}".format(furthest_index))
+            # move it
+            s_sequences[furthest_index].retired_d = True
+            s_sequences[furthest_index].move_to(True, s_sequences[furthest_index].d_retire_x, s_sequences[furthest_index].d_retire_y)
+            # trim it
+            s_sequences = [s for s in s_sequences if not s.retired_d]
+            num_seq = len(s_sequences)
+
+        vectors_list = []
+        for i in range(num_seq):
+            vectors_list.append(s_sequences[i].latent)
+        # put random (blank) entries at the end
+        num_rand = 30 - num_seq
+        for i in range(num_rand):
+            vectors_list.append(self.stable_rand_zs[i])
+        vectors = np.array(vectors_list)
+
+        RS = 20150101
+        # xy = bh_sne(vectors, perplexity=4., theta=0)
+        xy = TSNE(init='pca', learning_rate=100, random_state=RS, method='exact', perplexity=4).fit_transform(vectors)
+
+        gridw = 6
+        gridh = 5
+        grid_xy, size_wh, quadrants = rasterfairy.transformPointCloud2D(xy,target=(gridw,gridh))
+        indices = []
+        for i in range(gridw * gridh):
+            indices.append(quadrants[i]["indices"][0])
+
+        # update all layouts of everything that is active
+        i = 0
+        for cur_y in range(gridh):
+            for cur_x in range(gridw):
+                cur_index = indices[i]
+                i = i + 1
+                if cur_index < num_seq:
+                    s = s_sequences[cur_index]
+                    s.move_to(False, 320 + cur_x * 160, cur_y * 160)
+
     def process_epoch(self):
         global new_sequences, sequences
         print("Processing EPOCH")
@@ -536,10 +601,11 @@ class MainApp():
         win_width, win_height = self.window_sizes[win_num]
 
         windows[win_num].clear()
+        cur_s = (win_num == 1)
 
         cur_index = 0
         for s in sequences:
-            s.draw(True)
+            s.draw(cur_s)
 
     def draw_photobooth(self, dt, win_num):
         if self.main_screen_dirty == False:
@@ -625,10 +691,12 @@ window_sizes = [
     # [1280, 800],
     [1000, 800],
     [1280, 800],
+    [1280, 800],
 ]
 theApp = MainApp(window_sizes)
 theApp.draw_functions = [
     theApp.draw_photobooth,
+    theApp.draw_grid,
     theApp.draw_grid,
 ]
 
@@ -657,6 +725,8 @@ if __name__ == "__main__":
                         help="Index to screen to use for window one in fullscreen mode")
     parser.add_argument('--full2', dest='full2', default=None, type=int,
                         help="Index to screen to use for window two in fullscreen mode")
+    parser.add_argument('--full3', dest='full3', default=None, type=int,
+                        help="Index to screen to use for window three in fullscreen mode")
     parser.add_argument('--camera', dest='camera', default=1, type=int,
                         help="Camera device number")
     parser.add_argument("--encoded-vectors", type=str, default=None,
@@ -709,6 +779,13 @@ if __name__ == "__main__":
     else:
         window2 = pyglet.window.Window(window_sizes[1][0], window_sizes[1][1], resizable=False)
     windows.append(window2)
+
+    if args.full3 is not None:
+        window3 = pyglet.window.Window(fullscreen=True, screen=screens[args.full3])
+    else:
+        window3 = pyglet.window.Window(window_sizes[2][0], window_sizes[2][1], resizable=False)
+        window3.set_location(0, 0)
+    windows.append(window3)
 
     # window3 = pyglet.window.Window(fullscreen=True, screen=screens[2])
     # windows.append(window3)
