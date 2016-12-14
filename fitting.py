@@ -13,7 +13,8 @@ import random
 import sys
 import time
 import os
-from plat.utils import offset_from_string, vectors_from_json_filelist, json_list_to_array
+from plat.interpolate import lerp
+from plat.utils import offset_from_string, get_json_vectors, json_list_to_array
 from plat.bin.atvec import do_roc
 from plat.grid_layout import grid2img
 from plat.sampling import real_glob
@@ -169,11 +170,25 @@ new_sequences = []
 
 class SequenceDir():
     is_valid = True
+    s_x = 1280
+    s_y = (800-160)/2
+    s_dest_x = 1280 - 240
+    s_dest_y = (800-160)/2
+    s_cur_frame = 0
+    d_x = 0 - 160
+    d_y = (800-160)/2
+    d_dest_x = 80
+    d_dest_y = (800-160)/2
+    d_cur_frame = 0
+    in_s = True
+    in_d = True
+    latent = None
+    num_anim_frames = 24
+    cur_keyframe = 0
+    num_keyframes = 1
 
     """Just a container for unfortunate global state"""
     def __init__(self, directory, offset=None, min_index=None, max_index=None):
-        self.x = 0
-        self.y = 0
         self.frames = []
         files = sorted(real_glob("{}/*.{{jpg,png}}".format(directory)))
         num_files = len(files)
@@ -189,21 +204,67 @@ class SequenceDir():
             f = files[i]
             img = imread(f, mode='RGB')
             self.frames.append(image_to_texture(img))
-        self.num_frames = len(self.frames)
+        self.num_keyframes = len(self.frames)
         if offset is None:
-            self.cur_frame = random.randint(0, self.num_frames-1)
+            self.cur_keyframe = random.randint(0, self.num_keyframes-1)
         else:
-            self.cur_frame = offset
+            self.cur_keyframe = offset
+        json_file = real_glob("{}/*.json".format(directory))
+        if len(json_file) != 1:
+            print("PROBLEM READING JSON VECTOR FOR {}".format(directory))
+        else:
+            self.latent = get_json_vectors(json_file[0])[0]
 
-    def move_to(self, x, y):
-        self.x = x
-        self.y = y
+    def cur_pos(self, is_s):
+        if is_s:
+            if self.s_cur_frame >= self.num_anim_frames:
+                return self.s_dest_x, self.s_dest_y
+            v = float(self.s_cur_frame) / self.num_anim_frames
+            x = lerp(v, self.s_x, self.s_dest_x)
+            y = lerp(v, self.s_y, self.s_dest_y)
+            return x, y
+        else:
+            if self.d_cur_frame >= self.num_anim_frames:
+                return self.d_dest_x, self.d_dest_y
+            v = float(self.d_cur_frame) / self.num_anim_frames
+            x = lerp(v, self.d_x, self.d_dest_x)
+            y = lerp(v, self.d_y, self.d_dest_y)
+            return x, y
 
-    def draw(self):
+    def move_to(self, is_s, x, y):
+        cur_x, cur_y = self.cur_pos(is_s)
+        if is_s:
+            self.s_x, self.s_y = cur_x, cur_y
+            self.s_dest_x = x
+            self.s_dest_y = y
+            self.s_cur_frame = 0
+        else:
+            self.d_x, self.d_y = cur_x, cur_y
+            self.d_dest_x = x
+            self.d_dest_y = y
+            self.d_cur_frame = 0
+
+    def step_pos(self, is_s):
+        cur = self.cur_pos(is_s)
+        if is_s and self.s_cur_frame < self.num_anim_frames:
+            self.s_cur_frame += 1
+        elif not is_s and self.d_cur_frame < self.num_anim_frames:
+            self.d_cur_frame += 1
+        return cur
+
+    def draw(self, is_s):
         if not self.is_valid:
             return
-        self.frames[self.cur_frame].blit(self.x, self.y)
-        self.cur_frame = (self.cur_frame + 1) % self.num_frames
+        x, y = self.step_pos(is_s)
+        self.frames[self.cur_keyframe].blit(x, y)
+        self.cur_keyframe = (self.cur_keyframe + 1) % self.num_keyframes
+
+    # used only by photobooth window
+    def manual_draw(self, x, y):
+        if not self.is_valid:
+            return
+        self.frames[self.cur_keyframe].blit(x, y)
+        self.cur_keyframe = (self.cur_keyframe + 1) % self.num_keyframes
 
 def convert_and_process(indir):
     global new_sequences
@@ -300,9 +361,11 @@ class MainApp():
     next_sequence = None
     main_screen_dirty = True
     snapshot_every = 600
-    camera_every = 20
+    camera_every = 120
     last_snapshot = 0
     last_camera = 0
+    last_epoch = 0
+    epoch_every = 10
     unknown_person_tex = None
 
     """Just a container for unfortunate global state"""
@@ -344,44 +407,70 @@ class MainApp():
             # do_key_press(key.LEFT, None)
 
         # this moves sequences over in a sane way
-        process_queue = new_sequences
-        new_sequences = []
-        all_seq = sequences + process_queue
-        # keep last 40
-        sequences = all_seq[-40:]
+        # process_queue = new_sequences
+        # new_sequences = []
+        # all_seq = sequences + process_queue
+        # # keep last 40
+        # sequences = all_seq[-40:]
 
         cur_time = time.time()
-        if cur_time - theApp.last_camera> theApp.camera_every:
-            theApp.last_camera = cur_time
-            if theApp.use_camera:
-                theApp.last_aligned = None
-                theApp.main_screen_dirty = True
-                theApp.set_camera_recording(True)
-                if self.camera is not None and theApp.camera_recording:
+
+        if cur_time - self.last_camera> self.camera_every:
+            self.last_camera = cur_time
+            if self.use_camera:
+                self.last_aligned = None
+                self.main_screen_dirty = True
+                self.set_camera_recording(True)
+                if self.camera is not None and self.camera_recording:
                     self.cur_camera = get_camera_image(self.camera)
                     self.cur_camera_tex = image_to_texture(self.cur_camera)
                     candidate = get_aligned(self.cur_camera)
                     if candidate is not None:
-                        theApp.redraw_needed = True
-                        theApp.current_sequence = None
-                        theApp.last_aligned = candidate
-                        theApp.last_aligned_tex = image_to_texture(theApp.last_aligned)
+                        self.redraw_needed = True
+                        self.current_sequence = None
+                        self.last_aligned = candidate
+                        self.last_aligned_tex = image_to_texture(self.last_aligned)
                         self.write_cur_aligned()
-                theApp.set_camera_recording(False)
+                self.set_camera_recording(False)
+
+        if cur_time - self.last_epoch > self.epoch_every:
+            self.last_epoch = cur_time
+            self.process_epoch()
+
+    def process_layouts(self):
+        # update all layouts of everything that is active
+        cur_index = 0
+        num_seq = len(sequences)
+        for y in range(5):
+            for x in range(6):
+                if(cur_index < num_seq):
+                    s = sequences[cur_index]
+                    cur_index = cur_index + 1
+                    s.move_to(True, x * 160, y * 160)
+
+    def process_epoch(self):
+        global new_sequences, sequences
+        print("Processing EPOCH")
+        # this moves sequences over in a sane way
+        s = new_sequences.pop(0)
+        if type(s) == str:
+            s = SequenceDir(s)
+        if s.is_valid:
+            self.process_layouts()
+            # TODO: something smarter here
+            sequences.append(s)
+            # keep last 40
+            sequences = sequences[-40:]
 
     def draw_grid(self, dt, win_num):
         global windows, cur_vector, sequences
         win_width, win_height = self.window_sizes[win_num]
 
+        windows[win_num].clear()
+
         cur_index = 0
-        num_seq = len(sequences)
-        for y in range(5):
-            for x in range(8):
-                if(cur_index < num_seq):
-                    s = sequences[cur_index]
-                    cur_index = cur_index + 1
-                    s.move_to(x * 160, y * 160)
-                    s.draw()
+        for s in sequences:
+            s.draw(True)
 
     def draw_photobooth(self, dt, win_num):
         if self.main_screen_dirty == False:
@@ -407,8 +496,9 @@ class MainApp():
             self.current_sequence = self.next_sequence
 
         if self.current_sequence is not None:
-            self.current_sequence.move_to(300, 0)
-            self.current_sequence.draw()
+            # self.current_sequence.move_to(300, 0)
+            # self.current_sequence.draw()
+            self.current_sequence.manual_draw(300, 0)
 
     def write_cur_aligned(self, debugfile=False, datestr=None):
         if debugfile:
@@ -504,6 +594,8 @@ if __name__ == "__main__":
                         help="Comma separated list of json arrays")
     parser.add_argument('--dataset', dest='dataset', default=None,
                         help="Source dataset (for labels).")
+    parser.add_argument('--collection', default=None,
+                        help="Collection of faces across runs.")
     parser.add_argument('--labels', dest='labels', default=None,
                         help="Text file with 0/1 labels.")
     parser.add_argument('--split', dest='split', default="valid",
@@ -521,6 +613,16 @@ if __name__ == "__main__":
 
     display = pyglet.window.get_platform().get_default_display()
     screens = display.get_screens()
+
+    print("Saving aligned images to: {}".format(aligned_dir))
+    if args.collection is not None:
+        for d in sorted(os.listdir(args.collection)):
+            subdir = os.path.join(args.collection, d)
+            if os.path.isdir(subdir):
+                new_sequences.append(subdir)
+
+        # args.collection
+        #TODO: pre-scan collection here
 
     if args.skip1:
         window1 = None
