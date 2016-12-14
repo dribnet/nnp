@@ -22,6 +22,8 @@ from plat.fuel_helper import get_dataset_iterator
 from PIL import Image
 from scipy.misc import imread, imsave, imresize
 import subprocess
+from sklearn.manifold import TSNE
+from rasterfairy import rasterfairy
 
 import time
 from watchdog.observers import Observer
@@ -174,16 +176,22 @@ class SequenceDir():
     s_y = (800-160)/2
     s_dest_x = 1280 - 240
     s_dest_y = (800-160)/2
+    s_retire_x = 0-160
+    s_retire_y = (800-160)/2
     s_cur_frame = 0
     d_x = 0 - 160
     d_y = (800-160)/2
     d_dest_x = 80
     d_dest_y = (800-160)/2
+    d_retire_x = 1280
+    d_retire_y = (800-160)/2
     d_cur_frame = 0
     in_s = True
     in_d = True
+    retired_s = False
+    retired_d = False
     latent = None
-    num_anim_frames = 24
+    num_anim_frames = 4
     cur_keyframe = 0
     num_keyframes = 1
 
@@ -365,7 +373,7 @@ class MainApp():
     last_snapshot = 0
     last_camera = 0
     last_epoch = 0
-    epoch_every = 10
+    epoch_every = 3
     unknown_person_tex = None
 
     """Just a container for unfortunate global state"""
@@ -437,30 +445,91 @@ class MainApp():
             self.last_epoch = cur_time
             self.process_epoch()
 
-    def process_layouts(self):
+    stable_rand_zs = np.random.normal(loc=0, scale=1, size=(30, 160))
+    max_same_showing = 26
+
+    def process_layouts(self, next_s):
+        global sequences
+        # TODO: this should do s and d (currently s only)
+        vectors_list = []
+
+        # turn off formerly retired entries
+        for s in sequences:
+            if s.retired_s:
+                s.in_s = False
+            if s.retired_d:
+                s.in_d = False
+        # prune out entries not in either layout
+        sequences = [s for s in sequences if s.in_s or s.in_d]
+
+        # now do the same sequence
+        s_sequences = [s for s in sequences if s.in_s]
+        num_seq = len(s_sequences)
+        print("Processing {} same entries".format(num_seq))
+        # if there are too many, retire the one furthest away
+        if num_seq == self.max_same_showing + 1:
+            furthest_dist = 0
+            furthest_index = 0
+            new_point = next_s.latent
+            # note: we don't want to kick out the last one (on-deck)
+            # so range is not self.max_same_showing + 1 as expected
+            for i in range(self.max_same_showing):
+                s = s_sequences[i]
+                dist = np.linalg.norm(s.latent - new_point)
+                # print("dist {} is {}".format(i, dist))
+                if dist > furthest_dist:
+                    # print("Saving as {}".format(i))
+                    furthest_dist = dist
+                    furthest_index = i
+            print("Retiring index {}".format(furthest_index))
+            # move it
+            s_sequences[furthest_index].retired_s = True
+            s_sequences[furthest_index].move_to(True, s_sequences[furthest_index].s_retire_x, s_sequences[furthest_index].s_retire_y)
+            # trim it
+            s_sequences = [s for s in s_sequences if not s.retired_s]
+            num_seq = len(s_sequences)
+
+        for i in range(num_seq):
+            vectors_list.append(s_sequences[i].latent)
+        # put random (blank) entries at the end
+        num_rand = 30 - num_seq
+        for i in range(num_rand):
+            vectors_list.append(self.stable_rand_zs[i])
+        vectors = np.array(vectors_list)
+
+        RS = 20150101
+        # xy = bh_sne(vectors, perplexity=4., theta=0)
+        xy = TSNE(init='pca', learning_rate=100, random_state=RS, method='exact', perplexity=4).fit_transform(vectors)
+
+        gridw = 6
+        gridh = 5
+        grid_xy, size_wh, quadrants = rasterfairy.transformPointCloud2D(xy,target=(gridw,gridh))
+        indices = []
+        for i in range(gridw * gridh):
+            indices.append(quadrants[i]["indices"][0])
+
         # update all layouts of everything that is active
-        cur_index = 0
-        num_seq = len(sequences)
-        for y in range(5):
-            for x in range(6):
-                if(cur_index < num_seq):
-                    s = sequences[cur_index]
-                    cur_index = cur_index + 1
-                    s.move_to(True, x * 160, y * 160)
+        i = 0
+        for cur_y in range(gridh):
+            for cur_x in range(gridw):
+                cur_index = indices[i]
+                i = i + 1
+                if cur_index < num_seq:
+                    s = s_sequences[cur_index]
+                    s.move_to(True, cur_x * 160, cur_y * 160)
 
     def process_epoch(self):
         global new_sequences, sequences
         print("Processing EPOCH")
         # this moves sequences over in a sane way
-        s = new_sequences.pop(0)
-        if type(s) == str:
-            s = SequenceDir(s)
-        if s.is_valid:
-            self.process_layouts()
-            # TODO: something smarter here
-            sequences.append(s)
-            # keep last 40
-            sequences = sequences[-40:]
+        if len(new_sequences) > 0:
+            s = new_sequences.pop(0)
+            if type(s) == str:
+                s = SequenceDir(s)
+            if s.is_valid:
+                self.process_layouts(s)
+                # TODO: something smarter here
+                sequences.append(s)
 
     def draw_grid(self, dt, win_num):
         global windows, cur_vector, sequences
